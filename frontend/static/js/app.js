@@ -24,8 +24,8 @@ function badgeHtml(bucket) {
   return `<span class="badge badge-${bucket}">${BADGE_LABEL[bucket] || bucket}</span>`;
 }
 
-async function fetchJson(url) {
-  const resp = await fetch(url);
+async function fetchJson(url, options) {
+  const resp = await fetch(url, options);
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({}));
     throw new Error(body.detail || `Erro ${resp.status}`);
@@ -191,6 +191,51 @@ function fecharModal() {
 }
 
 // ---------------------------------------------------------------------
+// Atualização
+// ---------------------------------------------------------------------
+async function checarAtualizacao() {
+  const dispensada = sessionStorage.getItem("etm_update_dispensada");
+  try {
+    const info = await fetchJson("/api/update-check");
+    if (!info.update_available || dispensada === info.latest_version) return;
+
+    const banner = document.getElementById("update-banner");
+    const texto = document.getElementById("update-banner-text");
+    texto.textContent = `Nova versão disponível: v${info.latest_version} (você está na v${info.current_version})`;
+    banner.dataset.latestVersion = info.latest_version;
+    banner.classList.remove("hidden");
+  } catch (err) {
+    // Sem internet, GitHub fora do ar, etc. — falha silenciosamente, não
+    // atrapalha o uso normal do app.
+    console.warn("Checagem de atualização falhou:", err);
+  }
+}
+
+async function aplicarAtualizacao() {
+  const btn = document.getElementById("update-apply-btn");
+  const texto = document.getElementById("update-banner-text");
+  btn.disabled = true;
+  btn.textContent = "Atualizando...";
+  try {
+    await fetchJson("/api/update/apply", { method: "POST" });
+    // A partir daqui o app atual vai fechar sozinho. Mostramos aviso mas o
+    // servidor local também vai parar de responder.
+    texto.textContent = "Instalando a atualização — esta janela vai fechar em instantes. Abra o app novamente pra usar a nova versão.";
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = "Atualizar agora";
+    texto.textContent = `Falha ao atualizar: ${err.message}`;
+  }
+}
+
+function dispensarAtualizacao() {
+  const banner = document.getElementById("update-banner");
+  const versao = banner.dataset.latestVersion;
+  if (versao) sessionStorage.setItem("etm_update_dispensada", versao);
+  banner.classList.add("hidden");
+}
+
+// ---------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------
 function init() {
@@ -210,6 +255,10 @@ function init() {
   document.getElementById("voltar-usinas").addEventListener("click", voltarParaUsinas);
   document.getElementById("modal-close").addEventListener("click", fecharModal);
   document.querySelector(".modal-backdrop").addEventListener("click", fecharModal);
+
+  document.getElementById("update-apply-btn").addEventListener("click", aplicarAtualizacao);
+  document.getElementById("update-dismiss-btn").addEventListener("click", dispensarAtualizacao);
+  checarAtualizacao();
 }
 
 document.addEventListener("DOMContentLoaded", init);

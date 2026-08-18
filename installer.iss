@@ -2,7 +2,7 @@
 ; Compilar com: ISCC installer.iss
 
 #define MyAppName "ETM Grid Co"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.1"
 #define MyAppPublisher "Grid Co."
 #define MyAppExeName "ETM-GridCo.exe"
 
@@ -39,4 +39,8 @@ Name: "{group}\Desinstalar {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
+; skipifsilent: instalações silenciosas (usadas pelo próprio app pra se
+; auto-atualizar) NÃO reabrem o app sozinhas — o usuário reabre manualmente.
+; Instalações manuais (duplo-clique no instalador) continuam oferecendo a
+; opção de abrir na hora.
 Filename: "{app}\{#MyAppExeName}"; Description: "Abrir {#MyAppName} agora"; Flags: nowait postinstall skipifsilent

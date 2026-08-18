@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import updater
 from .fracttal_client import fracttal_client
 
 # Quando empacotado com PyInstaller (--onefile), os arquivos de dados (o
@@ -133,6 +134,39 @@ def get_historico_usina(usina: str, refresh: bool = False) -> list[dict[str, Any
     ]
     historico.sort(key=lambda o: o.get("data_criacao") or "", reverse=True)
     return historico
+
+
+# ----------------------------------------------------------------------
+# Atualização
+# ----------------------------------------------------------------------
+@app.get("/api/update-check")
+def update_check() -> dict[str, Any]:
+    result = updater.check_for_update()
+    # Não expõe a url interna do asset (exige o token) pro frontend.
+    result.pop("_asset_url", None)
+    result.pop("_asset_name", None)
+    return result
+
+
+@app.post("/api/update/apply")
+def update_apply() -> dict[str, Any]:
+    result = updater.check_for_update()
+    if not result.get("update_available"):
+        raise HTTPException(status_code=409, detail="Nenhuma atualização disponível no momento.")
+
+    asset_url = result.get("_asset_url")
+    asset_name = result.get("_asset_name")
+    if not asset_url or not asset_name:
+        raise HTTPException(status_code=502, detail="Release encontrada, mas sem instalador (.exe) anexado.")
+
+    try:
+        updater.apply_update(asset_url, asset_name)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Falha ao baixar/aplicar atualização: {exc}") from exc
+
+    # O processo atual vai se encerrar sozinho em ~1,5s (ver updater.py) para
+    # o instalador conseguir sobrescrever o executável.
+    return {"status": "atualizando", "latest_version": result.get("latest_version")}
 
 
 # ----------------------------------------------------------------------

@@ -31,6 +31,18 @@ ETM_DESCRIPTION_MARKERS = ["estação meteorológica", "estacao meteorologica"]
 # Valor exato do campo tasks_log_task_type_main que identifica OS corretivas
 CORRECTIVE_TASK_TYPE = "Corretiva"
 
+# ----------------------------------------------------------------------
+# Atualização automática (releases do GitHub)
+# ----------------------------------------------------------------------
+# Repositório privado onde as versões do app são publicadas. O token abaixo é
+# somente-leitura (permissão "Contents: Read-only" nesse único repositório) —
+# mesmo que alguém extraia esse valor do .exe, o máximo que consegue fazer é
+# ler esse repositório, que só contém o código do app e os instaladores.
+GITHUB_REPO = "Aury-Albuquerque/Aplicativo-ETMs"
+_DEFAULT_GITHUB_TOKEN = "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"
+GITHUB_UPDATE_TOKEN = os.getenv("GITHUB_UPDATE_TOKEN") or _DEFAULT_GITHUB_TOKEN
+GITHUB_API_BASE = "https://api.github.com"
+
 if not FRACTTAL_CLIENT_ID or not FRACTTAL_CLIENT_SECRET:
     raise RuntimeError(
         "FRACTTAL_CLIENT_ID / FRACTTAL_CLIENT_SECRET não configurados. "

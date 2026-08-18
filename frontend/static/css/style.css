@@ -103,6 +103,48 @@ body {
 .refresh-btn:hover { border-color: var(--lime); }
 .refresh-btn:disabled { opacity: 0.5; cursor: wait; }
 
+/* ---------- Banner de atualização ---------- */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: linear-gradient(90deg, rgba(170,220,33,0.16), rgba(170,220,33,0.06));
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  font-size: 13.5px;
+}
+
+.update-banner.hidden { display: none; }
+
+.update-banner-actions { display: flex; align-items: center; gap: 10px; }
+
+.update-apply-btn {
+  background: var(--lime);
+  color: var(--navy);
+  border: none;
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.update-apply-btn:hover { filter: brightness(1.08); }
+.update-apply-btn:disabled { opacity: 0.6; cursor: wait; }
+
+.update-dismiss-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.update-dismiss-btn:hover { color: var(--text); }
+
 /* ---------- Layout ---------- */
 main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
 
