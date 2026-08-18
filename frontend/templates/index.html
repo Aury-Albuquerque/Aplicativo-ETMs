@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ETM · Grid Co.</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-brand">
+      <span class="brand-mark"></span>
+      <div>
+        <h1>Estações Meteorológicas</h1>
+        <p>Grid Co. &middot; Engenharia de O&amp;M</p>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="planner">Planner</button>
+      <button class="tab-btn" data-tab="historico">Histórico</button>
+    </nav>
+    <button id="refresh-btn" class="refresh-btn" title="Atualizar dados do Fracttal">⟳ Atualizar</button>
+  </header>
+
+  <main>
+    <!-- SEÇÃO 1: PLANNER -->
+    <section id="tab-planner" class="tab-panel active">
+      <div id="planner-status" class="status-line"></div>
+      <div class="board">
+        <div class="column">
+          <h2 class="column-title col-nao-iniciada">Não iniciadas <span id="count-nao-iniciada" class="count"></span></h2>
+          <div id="col-nao-iniciada" class="card-list"></div>
+        </div>
+        <div class="column">
+          <h2 class="column-title col-em-andamento">Em andamento <span id="count-em-andamento" class="count"></span></h2>
+          <div id="col-em-andamento" class="card-list"></div>
+        </div>
+        <div class="column">
+          <h2 class="column-title col-finalizada">Finalizadas <span id="count-finalizada" class="count"></span></h2>
+          <div id="col-finalizada" class="card-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEÇÃO 2: HISTÓRICO -->
+    <section id="tab-historico" class="tab-panel">
+      <div id="historico-lista-view">
+        <div id="historico-status" class="status-line"></div>
+        <div id="usinas-grid" class="usinas-grid"></div>
+      </div>
+      <div id="historico-detalhe-view" class="hidden">
+        <button id="voltar-usinas" class="back-btn">&larr; Voltar às usinas</button>
+        <h2 id="usina-titulo"></h2>
+        <div id="usina-historico-lista" class="history-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="os-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <button id="modal-close" class="modal-close">&times;</button>
+      <div id="modal-content"></div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+venv/
+.venv/
+dist/
+build/
+*.spec
+installer_output/
+*.log
+scratch_*.py
+.claude/
