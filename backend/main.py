@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import config, updater
-from .comments import comments_client
+from .comments import DIAGNOSTIC_OPTIONS, TAG_OPTIONS, comments_client
 from .fracttal_client import extract_cliente, fracttal_client
 
 # Quando empacotado com PyInstaller (--onefile), os arquivos de dados (o
@@ -93,8 +93,19 @@ _STATUS_FRACTTAL_LABEL = {
 }
 
 
-def _normalize_os(raw: dict[str, Any]) -> dict[str, Any]:
+def _normalize_os(raw: dict[str, Any], id_to_folio: dict[int, str] | None = None) -> dict[str, Any]:
     usina = raw.get("groups_1_description") or "Usina não identificada"
+    # "os_pai" no Fracttal vem como um ID interno (id_work_order), não o
+    # folio que aparece pra quem usa. Tentamos "traduzir" esse ID pro folio
+    # cruzando com as outras OS já carregadas nesta mesma consulta — só não
+    # dá pra resolver se a OS pai não estiver entre as que buscamos agora.
+    id_parent_wo = raw.get("id_parent_wo")
+    os_pai_folio = None
+    if id_parent_wo and id_to_folio:
+        try:
+            os_pai_folio = id_to_folio.get(int(id_parent_wo))
+        except (TypeError, ValueError):
+            os_pai_folio = None
     tipo_os = (raw.get("tasks_log_task_type_main") or "").strip()
     tecnico = (raw.get("personnel_description") or "").strip()
     eh_corretiva = tipo_os.lower() == config.CORRECTIVE_TASK_TYPE.lower()
@@ -120,6 +131,9 @@ def _normalize_os(raw: dict[str, Any]) -> dict[str, Any]:
         "solicitante": raw.get("requested_by"),
         "criado_por": raw.get("created_by"),
         "etiquetas_fracttal": _extract_etiquetas_fracttal(raw),
+        "os_pai_id": id_parent_wo or None,
+        "os_pai_folio": os_pai_folio,
+        "os_filhas": [f for f in (raw.get("children") or []) if f],
         "data_criacao": raw.get("creation_date"),
         "data_inicial": raw.get("initial_date"),
         "data_final": raw.get("final_date"),
@@ -128,6 +142,25 @@ def _normalize_os(raw: dict[str, Any]) -> dict[str, Any]:
         if raw.get("id_work_order")
         else None,
     }
+
+
+def _build_id_to_folio(raw_orders: list[dict[str, Any]]) -> dict[int, str]:
+    return {
+        raw["id_work_order"]: raw["wo_folio"]
+        for raw in raw_orders
+        if raw.get("id_work_order") and raw.get("wo_folio")
+    }
+
+
+def _safe_diagnosticos_e_tags() -> tuple[dict[str, str], dict[str, list[str]]]:
+    # Diagnóstico e etiquetas são "extras" guardados no GitHub — se estiver
+    # fora do ar por algum motivo, isso não pode derrubar o Planner/Histórico
+    # inteiro (o app continua funcionando, só sem esses dois detalhes).
+    try:
+        return comments_client.get_diagnosticos_e_tags()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[main] Falha ao buscar diagnósticos/etiquetas: {exc}")
+        return {}, {}
 
 
 # ----------------------------------------------------------------------
@@ -140,13 +173,17 @@ def get_planner(refresh: bool = False) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Erro ao consultar Fracttal: {exc}") from exc
 
+    id_to_folio = _build_id_to_folio(raw_orders)
+    diagnosticos, tags = _safe_diagnosticos_e_tags()
     columns: dict[str, list[dict[str, Any]]] = {
         "nao_iniciada": [],
         "em_andamento": [],
         "finalizada": [],
     }
     for raw in raw_orders:
-        os_norm = _normalize_os(raw)
+        os_norm = _normalize_os(raw, id_to_folio)
+        os_norm["diagnostico"] = diagnosticos.get(str(os_norm["folio"]))
+        os_norm["etiquetas"] = tags.get(str(os_norm["folio"]), [])
         bucket = os_norm["status_bucket"]
         if bucket == "cancelada":
             # OS cancelada não é trabalho ativo nem pendente — fica de fora
@@ -181,11 +218,16 @@ def get_historico_usina(usina: str, refresh: bool = False) -> list[dict[str, Any
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Erro ao consultar Fracttal: {exc}") from exc
 
-    historico = [
-        _normalize_os(raw)
-        for raw in raw_orders
-        if (raw.get("groups_1_description") or "Usina não identificada") == usina
-    ]
+    id_to_folio = _build_id_to_folio(raw_orders)
+    diagnosticos, tags = _safe_diagnosticos_e_tags()
+    historico = []
+    for raw in raw_orders:
+        if (raw.get("groups_1_description") or "Usina não identificada") != usina:
+            continue
+        os_norm = _normalize_os(raw, id_to_folio)
+        os_norm["diagnostico"] = diagnosticos.get(str(os_norm["folio"]))
+        os_norm["etiquetas"] = tags.get(str(os_norm["folio"]), [])
+        historico.append(os_norm)
     historico.sort(key=lambda o: o.get("data_criacao") or "", reverse=True)
     return historico
 
@@ -216,6 +258,52 @@ def criar_comentario(folio: str, comentario: ComentarioIn) -> dict[str, Any]:
         return comments_client.add_comment(folio, autor, texto)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Erro ao salvar comentário: {exc}") from exc
+
+
+# ----------------------------------------------------------------------
+# Diagnóstico (etiqueta única por OS, compartilhada com o time)
+# ----------------------------------------------------------------------
+class DiagnosticoIn(BaseModel):
+    diagnostico: str | None = None
+
+
+@app.get("/api/diagnosticos/opcoes")
+def opcoes_diagnostico() -> list[str]:
+    return DIAGNOSTIC_OPTIONS
+
+
+@app.post("/api/os/{folio}/diagnostico")
+def definir_diagnostico(folio: str, corpo: DiagnosticoIn) -> dict[str, Any]:
+    try:
+        comments_client.set_diagnostico(folio, corpo.diagnostico)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Erro ao salvar diagnóstico: {exc}") from exc
+    return {"folio": folio, "diagnostico": corpo.diagnostico}
+
+
+# ----------------------------------------------------------------------
+# Etiquetas locais (compartilhadas com o time — várias por OS)
+# ----------------------------------------------------------------------
+class TagToggleIn(BaseModel):
+    tag: str
+
+
+@app.get("/api/tags/opcoes")
+def opcoes_tags() -> list[str]:
+    return TAG_OPTIONS
+
+
+@app.post("/api/os/{folio}/tags/toggle")
+def alternar_tag(folio: str, corpo: TagToggleIn) -> dict[str, Any]:
+    try:
+        etiquetas = comments_client.toggle_tag(folio, corpo.tag)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Erro ao salvar etiqueta: {exc}") from exc
+    return {"folio": folio, "etiquetas": etiquetas}
 
 
 # ----------------------------------------------------------------------

@@ -456,6 +456,36 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
 
 .card-tag-add-btn:hover { border-color: var(--lime); color: var(--lime); }
 
+/* ---------- Diagnóstico (etiqueta única, compartilhada com o time) ---------- */
+.diagnostico-row { margin-top: 6px; }
+
+.diagnostico-btn {
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.diagnostico-btn:hover { border-color: #ff9d6c; color: #ff9d6c; }
+
+.diagnostico-limpar-btn {
+  background: none;
+  border: none;
+  color: var(--danger);
+  font-size: 12px;
+  text-align: left;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+
+.diagnostico-limpar-btn:hover { color: #ff8f8f; }
+
 .tag-popover {
   position: fixed;
   z-index: 60;
@@ -605,6 +635,7 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
 .badge-finalizada { background: rgba(75,208,139,0.18); color: var(--ok); }
 .badge-cancelada { background: rgba(182,177,201,0.18); color: var(--text-muted); }
 .badge-analise { background: rgba(186,120,255,0.18); color: #c79bff; }
+.badge-diagnostico { background: rgba(255,157,108,0.18); color: #ff9d6c; }
 
 /* Status "cru" da tarefa no Fracttal (Não iniciada/Em progresso/Pausada/Finalizada) */
 .badge-fracttal { border: 1px solid transparent; }

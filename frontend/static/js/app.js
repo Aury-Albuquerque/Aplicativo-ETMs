@@ -1,6 +1,10 @@
-const TAG_OPTIONS = ["OS em campo", "Stand By", "Validação Final"];
-const TAGS_STORAGE_KEY = "etm_tags_por_os";
+// Compartilhado com o time (via GitHub) — lista real vem de /api/tags/opcoes,
+// isso aqui é só um valor inicial pra não travar a interface antes do fetch.
+const TAG_OPCOES_PADRAO = ["OS em campo", "Stand By", "Validação Final"];
 const NOME_USUARIO_STORAGE_KEY = "etm_nome_usuario";
+// Compartilhado com o time (via GitHub) — lista real vem de /api/diagnosticos/opcoes,
+// isso aqui é só um valor inicial pra não travar a interface antes do fetch.
+const DIAGNOSTICO_OPCOES_PADRAO = ["Falha de Equipamento", "Falha de Comunicação", "Sujidade", "Outro"];
 
 const state = {
   usinas: [],
@@ -16,6 +20,8 @@ const state = {
   },
   tagsSelecionadas: new Set(),
   modalFolioAtual: null,
+  diagnosticoOpcoes: DIAGNOSTICO_OPCOES_PADRAO,
+  tagOpcoes: TAG_OPCOES_PADRAO,
 };
 
 // ---------------------------------------------------------------------
@@ -80,37 +86,16 @@ function initNomeUsuario() {
 }
 
 // ---------------------------------------------------------------------
-// Etiquetas locais (guardadas só neste PC, nunca vão pro Fracttal)
+// Etiquetas (compartilhadas com todo o time, via GitHub — igual diagnóstico)
 // ---------------------------------------------------------------------
-function carregarTodasAsTags() {
-  try {
-    return JSON.parse(localStorage.getItem(TAGS_STORAGE_KEY)) || {};
-  } catch {
-    return {};
-  }
-}
-
-function salvarTodasAsTags(todas) {
-  localStorage.setItem(TAGS_STORAGE_KEY, JSON.stringify(todas));
-}
-
-function getTagsDaOs(folio) {
-  const todas = carregarTodasAsTags();
-  return todas[String(folio)] || [];
-}
-
-function toggleTagDaOs(folio, tag) {
-  const todas = carregarTodasAsTags();
-  const key = String(folio);
-  const atuais = new Set(todas[key] || []);
-  if (atuais.has(tag)) {
-    atuais.delete(tag);
-  } else {
-    atuais.add(tag);
-  }
-  todas[key] = Array.from(atuais);
-  if (todas[key].length === 0) delete todas[key];
-  salvarTodasAsTags(todas);
+async function alternarTagDaOs(os, tag) {
+  const resp = await fetchJson(`/api/os/${encodeURIComponent(os.folio)}/tags/toggle`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tag }),
+  });
+  os.etiquetas = resp.etiquetas;
+  return resp.etiquetas;
 }
 
 // ---------------------------------------------------------------------
@@ -153,7 +138,7 @@ function initColunasRetrateis() {
 // ---------------------------------------------------------------------
 function renderTagsDoCard(os) {
   const tagsFracttal = os.etiquetas_fracttal || [];
-  const tagsLocais = getTagsDaOs(os.folio);
+  const tagsLocais = os.etiquetas || [];
   const badgesFracttal = tagsFracttal
     .map((t) => `<span class="card-tag-badge card-tag-badge-fracttal" title="Etiqueta do Fracttal">${t}</span>`)
     .join("");
@@ -180,22 +165,36 @@ function statusFracttalBadgeHtml(os) {
   return `<span class="badge badge-fracttal ${classe}" title="Status da tarefa no Fracttal">${os.status_fracttal}</span>`;
 }
 
+function diagnosticoBadgeHtml(os) {
+  return os.diagnostico ? `<span class="badge badge-diagnostico">${os.diagnostico}</span>` : "";
+}
+
+function diagnosticoBotaoHtml(os) {
+  return `<button type="button" class="diagnostico-btn" data-folio="${os.folio}" title="Definir diagnóstico">${os.diagnostico ? "✎" : "+ diagnóstico"}</button>`;
+}
+
 function renderCard(os, { comEtiquetas = false } = {}) {
   const div = document.createElement("div");
   div.className = "os-card";
   div.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${os.em_analise ? '<span class="badge badge-analise">Em análise</span>' : ""} ${statusFracttalBadgeHtml(os)}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)}</div>
     <div class="titulo">${os.titulo || "(sem título)"}</div>
     <div class="meta">
       <span>${os.usina}</span>
       <span>${formatarData(os.data_criacao)}</span>
     </div>
+    <div class="diagnostico-row">${diagnosticoBotaoHtml(os)}</div>
     ${comEtiquetas ? renderTagsDoCard(os) : ""}
   `;
   div.addEventListener("click", (e) => {
     if (e.target.closest(".card-tag-add-btn")) {
       e.stopPropagation();
       abrirTagPopover(e.target, os);
+      return;
+    }
+    if (e.target.closest(".diagnostico-btn")) {
+      e.stopPropagation();
+      abrirDiagnosticoPopover(e.target, os);
       return;
     }
     abrirModal(os);
@@ -239,23 +238,32 @@ function abrirTagPopover(anchorEl, os) {
   popover.style.top = `${rect.bottom + 6}px`;
   popover.style.left = `${Math.min(rect.left, window.innerWidth - 190)}px`;
 
-  const tagsAtuais = new Set(getTagsDaOs(os.folio));
-  popover.innerHTML = TAG_OPTIONS.map(
-    (tag) => `
+  const tagsAtuais = new Set(os.etiquetas || []);
+  popover.innerHTML = state.tagOpcoes
+    .map(
+      (tag) => `
       <label class="tag-popover-option">
         <input type="checkbox" value="${tag}" ${tagsAtuais.has(tag) ? "checked" : ""} />
         ${tag}
       </label>
     `
-  ).join("");
+    )
+    .join("");
 
   popover.querySelectorAll("input[type=checkbox]").forEach((cb) => {
-    cb.addEventListener("change", () => {
-      toggleTagDaOs(os.folio, cb.value);
-      aplicarFiltrosERenderizar();
-      // Reabre o popover atualizado no mesmo card (o DOM foi recriado)
-      const novoBtn = document.querySelector(`.card-tag-add-btn[data-folio="${os.folio}"]`);
-      if (novoBtn) abrirTagPopover(novoBtn, os);
+    cb.addEventListener("change", async () => {
+      cb.disabled = true;
+      try {
+        await alternarTagDaOs(os, cb.value);
+        aplicarFiltrosERenderizar();
+        // Reabre o popover atualizado no mesmo card (o DOM foi recriado)
+        const novoBtn = document.querySelector(`.card-tag-add-btn[data-folio="${os.folio}"]`);
+        if (novoBtn) abrirTagPopover(novoBtn, os);
+      } catch (err) {
+        cb.disabled = false;
+        cb.checked = !cb.checked;
+        alert(`Não foi possível salvar a etiqueta: ${err.message}`);
+      }
     });
   });
 
@@ -264,13 +272,74 @@ function abrirTagPopover(anchorEl, os) {
 }
 
 // ---------------------------------------------------------------------
+// Diagnóstico (etiqueta única por OS, compartilhada com o time via GitHub)
+// ---------------------------------------------------------------------
+function fecharDiagnosticoPopover() {
+  const existente = document.querySelector(".diagnostico-popover");
+  if (existente) existente.remove();
+  document.removeEventListener("click", fecharDiagnosticoPopoverSeClicouFora, true);
+}
+
+function fecharDiagnosticoPopoverSeClicouFora(e) {
+  const popover = document.querySelector(".diagnostico-popover");
+  if (popover && !popover.contains(e.target) && !e.target.classList.contains("diagnostico-btn")) {
+    fecharDiagnosticoPopover();
+  }
+}
+
+function abrirDiagnosticoPopover(anchorEl, os) {
+  fecharDiagnosticoPopover();
+  const rect = anchorEl.getBoundingClientRect();
+  const popover = document.createElement("div");
+  popover.className = "tag-popover diagnostico-popover";
+  popover.style.top = `${rect.bottom + 6}px`;
+  popover.style.left = `${Math.min(rect.left, window.innerWidth - 220)}px`;
+
+  const opcoesHtml = state.diagnosticoOpcoes
+    .map(
+      (op) => `
+      <label class="tag-popover-option">
+        <input type="radio" name="diagnostico-radio" value="${op}" ${os.diagnostico === op ? "checked" : ""} />
+        ${op}
+      </label>
+    `
+    )
+    .join("");
+  popover.innerHTML = `${opcoesHtml}<button type="button" class="diagnostico-limpar-btn">Remover diagnóstico</button>`;
+
+  popover.querySelectorAll("input[type=radio]").forEach((radio) => {
+    radio.addEventListener("change", () => salvarDiagnostico(os, radio.value));
+  });
+  popover.querySelector(".diagnostico-limpar-btn").addEventListener("click", () => salvarDiagnostico(os, null));
+
+  document.body.appendChild(popover);
+  setTimeout(() => document.addEventListener("click", fecharDiagnosticoPopoverSeClicouFora, true), 0);
+}
+
+async function salvarDiagnostico(os, diagnostico) {
+  try {
+    await fetchJson(`/api/os/${encodeURIComponent(os.folio)}/diagnostico`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ diagnostico }),
+    });
+    os.diagnostico = diagnostico;
+    fecharDiagnosticoPopover();
+    aplicarFiltrosERenderizar();
+    if (state.modalFolioAtual === os.folio) abrirModal(os);
+  } catch (err) {
+    alert(`Não foi possível salvar o diagnóstico: ${err.message}`);
+  }
+}
+
+// ---------------------------------------------------------------------
 // Filtro por etiqueta (só na coluna Em andamento)
 // ---------------------------------------------------------------------
 function renderTagFiltroRow() {
   const row = document.getElementById("tag-filtro-row");
-  row.innerHTML = TAG_OPTIONS.map(
-    (tag) => `<button type="button" class="tag-chip" data-tag="${tag}">${tag}</button>`
-  ).join("");
+  row.innerHTML = state.tagOpcoes
+    .map((tag) => `<button type="button" class="tag-chip" data-tag="${tag}">${tag}</button>`)
+    .join("");
   row.querySelectorAll(".tag-chip").forEach((chip) => {
     chip.addEventListener("click", () => {
       const tag = chip.dataset.tag;
@@ -299,7 +368,7 @@ function passaFiltrosGerais(os) {
 
 function passaFiltroTags(os) {
   if (state.tagsSelecionadas.size === 0) return true;
-  const tagsDaOs = new Set(getTagsDaOs(os.folio));
+  const tagsDaOs = new Set(os.etiquetas || []);
   for (const t of state.tagsSelecionadas) {
     if (tagsDaOs.has(t)) return true;
   }
@@ -553,7 +622,7 @@ function renderHistoryItem(os) {
   const div = document.createElement("div");
   div.className = "history-item";
   div.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Em análise</span>' : ""} ${statusFracttalBadgeHtml(os)}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)}</div>
     <div class="titulo">${os.titulo || "(sem título)"}</div>
     <div class="meta">${os.etm_codigo || ""} · criada em ${formatarData(os.data_criacao)}</div>
   `;
@@ -594,7 +663,7 @@ function abrirModal(os) {
   const modal = document.getElementById("os-modal");
   const content = document.getElementById("modal-content");
   content.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Em análise</span>' : ""} ${statusFracttalBadgeHtml(os)}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${diagnosticoBotaoHtml(os)}</div>
     <h3>${os.titulo || "(sem título)"}</h3>
     <dl>
       <dt>Usina</dt><dd>${os.usina}</dd>
@@ -606,6 +675,16 @@ function abrirModal(os) {
       <dt>Solicitante</dt><dd>${os.solicitante || "—"}</dd>
       <dt>Criado por</dt><dd>${os.criado_por || "—"}</dd>
       <dt>Etiquetas do Fracttal</dt><dd>${(os.etiquetas_fracttal || []).join(", ") || "—"}</dd>
+      ${
+        os.os_pai_id
+          ? `<dt>OS Pai</dt><dd>${os.os_pai_folio ? `OS ${os.os_pai_folio}` : `OT interna #${os.os_pai_id} (não carregada nesta consulta)`}</dd>`
+          : ""
+      }
+      ${
+        os.os_filhas && os.os_filhas.length > 0
+          ? `<dt>OS Filha${os.os_filhas.length > 1 ? "s" : ""}</dt><dd>${os.os_filhas.map((f) => `OS ${f}`).join(", ")}</dd>`
+          : ""
+      }
       <dt>Criada em</dt><dd>${formatarData(os.data_criacao)}</dd>
       <dt>Iniciada em</dt><dd>${formatarData(os.data_inicial)}</dd>
       <dt>Finalizada em</dt><dd>${formatarData(os.data_final)}</dd>
@@ -613,6 +692,14 @@ function abrirModal(os) {
     ${os.url ? `<a class="fracttal-link" href="${os.url}" target="_blank" rel="noopener">Abrir no Fracttal ↗</a>` : ""}
   `;
   modal.classList.remove("hidden");
+
+  const diagBtn = content.querySelector(".diagnostico-btn");
+  if (diagBtn) {
+    diagBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      abrirDiagnosticoPopover(diagBtn, os);
+    });
+  }
 
   state.modalFolioAtual = os.folio;
   document.getElementById("comentario-texto").value = "";
@@ -759,6 +846,21 @@ function init() {
   renderTagFiltroRow();
   carregarPlanner();
   carregarUsinas();
+  fetchJson("/api/diagnosticos/opcoes")
+    .then((opcoes) => {
+      state.diagnosticoOpcoes = opcoes;
+    })
+    .catch(() => {
+      /* mantém DIAGNOSTICO_OPCOES_PADRAO se a busca falhar */
+    });
+  fetchJson("/api/tags/opcoes")
+    .then((opcoes) => {
+      state.tagOpcoes = opcoes;
+      renderTagFiltroRow();
+    })
+    .catch(() => {
+      /* mantém TAG_OPCOES_PADRAO se a busca falhar */
+    });
 
   document.getElementById("refresh-btn").addEventListener("click", async (e) => {
     e.target.disabled = true;
