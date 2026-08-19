@@ -160,11 +160,105 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
 
 .status-line.error { color: var(--danger); }
 
+/* ---------- Filtros do Planner ---------- */
+.filtros-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+  background: var(--navy-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+}
+
+.filtro-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  position: relative;
+  min-width: 180px;
+}
+
+.filtro-item label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.filtro-item select,
+.filtro-item input[type="text"] {
+  background: var(--navy-lighter);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.filtro-item select:focus,
+.filtro-item input[type="text"]:focus {
+  outline: none;
+  border-color: var(--lime);
+}
+
+.filtro-limpar-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  height: 36px;
+}
+
+.filtro-limpar-btn:hover { border-color: var(--lime); color: var(--text); }
+
+.combobox { position: relative; }
+
+.combobox-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--navy-lighter);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 20;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+
+.combobox-dropdown.hidden { display: none; }
+
+.combobox-option {
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.combobox-option:hover,
+.combobox-option.active { background: rgba(170,220,33,0.12); color: var(--lime); }
+
+.combobox-empty {
+  padding: 8px 12px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
 /* ---------- Planner (Kanban) ---------- */
 .board {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 20px;
+  align-items: start;
 }
 
 .column-title {
@@ -196,6 +290,20 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
   font-size: 12px;
 }
 
+.collapse-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+
+.collapse-btn:hover { color: var(--lime); }
+.collapse-btn.collapsed { transform: rotate(-90deg); }
+
 .card-list {
   display: flex;
   flex-direction: column;
@@ -205,6 +313,17 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
   border-radius: var(--radius);
   padding: 10px;
 }
+
+.card-list.collapsed { display: none; }
+
+.tag-filtro-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px 4px;
+}
+
+.tag-filtro-row.hidden { display: none; }
 
 .os-card {
   background: var(--navy-lighter);
@@ -246,7 +365,138 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
   padding: 20px 8px;
 }
 
+/* ---------- Etiquetas (locais, só no app) ---------- */
+.tag-chip {
+  background: var(--navy-lighter);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tag-chip:hover { border-color: var(--lime); color: var(--text); }
+
+.tag-chip.selected {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: var(--navy);
+}
+
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.card-tag-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(170,220,33,0.14);
+  color: var(--lime);
+  border: 1px solid rgba(170,220,33,0.3);
+}
+
+/* Etiquetas nativas do Fracttal — azul, pra diferenciar das nossas (verde) */
+.card-tag-badge-fracttal {
+  background: rgba(64,150,255,0.16);
+  color: #6fb2ff;
+  border: 1px solid rgba(64,150,255,0.35);
+}
+
+.card-tag-add-btn {
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.card-tag-add-btn:hover { border-color: var(--lime); color: var(--lime); }
+
+.tag-popover {
+  position: fixed;
+  z-index: 60;
+  background: var(--navy-lighter);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+}
+
+.tag-popover-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+
+.tag-popover-option:hover { background: rgba(255,255,255,0.05); }
+.tag-popover-option input { accent-color: var(--lime); }
+
 /* ---------- Histórico ---------- */
+.busca-usina-input {
+  display: block;
+  width: 100%;
+  max-width: 340px;
+  background: var(--navy-lighter);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  margin: 0 0 16px;
+}
+
+.busca-usina-input:focus { outline: none; border-color: var(--lime); }
+
+.clientes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.cliente-card {
+  background: var(--navy-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 18px;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+
+.cliente-card:hover { border-color: var(--lime); transform: translateY(-2px); }
+
+.cliente-card h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.cliente-card p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
 .usinas-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));

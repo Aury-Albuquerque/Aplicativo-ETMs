@@ -20,6 +20,19 @@ _PAGE_LIMIT = 100
 _MAX_WORKERS = 8
 
 
+def extract_cliente(usina_nome: str) -> str:
+    """Extrai o nome do cliente a partir do nome da usina.
+
+    No Fracttal, o padrão do nome é "{Cliente} - {Usina} - {UF}"
+    (ex: "Thopen - Caxambu 1 - SP", "Sal Energia - Aquiraz 1 (Salvales) - CE").
+    O cliente é sempre o trecho antes do primeiro " - ".
+    """
+    if not usina_nome or usina_nome == "Usina não identificada":
+        return "Não identificado"
+    partes = usina_nome.split(" - ", 1)
+    return partes[0].strip() if partes[0].strip() else usina_nome
+
+
 class FracttalClient:
     def __init__(self) -> None:
         self._session = requests.Session()
@@ -39,6 +52,15 @@ class FracttalClient:
         self._orders_cache: list[dict[str, Any]] | None = None
         self._orders_cache_at: float = 0.0
         self._orders_cache_ttl = 3 * 60  # 3 minutos
+
+        # Locks pra "coalescer" chamadas concorrentes: se o Planner e o
+        # Histórico pedem os dados quase ao mesmo tempo (ex: logo que o app
+        # abre, antes do cache esquentar), sem isso os dois disparariam a
+        # busca completa (~125 chamadas cada) em paralelo, sobrecarregando a
+        # API do Fracttal e derrubando uma das duas. Com o lock, a segunda
+        # chamada espera a primeira terminar e reaproveita o resultado.
+        self._etm_lock = threading.Lock()
+        self._orders_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Autenticação
@@ -100,32 +122,35 @@ class FracttalClient:
         mantemos um cache em memória de alguns minutos para não varrer tudo
         a cada clique. Use force_refresh=True para ignorar o cache.
         """
-        now = time.time()
-        if (
-            not force_refresh
-            and self._etm_cache is not None
-            and (now - self._etm_cache_at) < self._etm_cache_ttl
-        ):
-            return self._etm_cache
+        with self._etm_lock:
+            # Reconfere o cache já dentro do lock: se outra thread esperou e
+            # acabou de preencher o cache, reaproveita em vez de buscar de novo.
+            now = time.time()
+            if (
+                not force_refresh
+                and self._etm_cache is not None
+                and (now - self._etm_cache_at) < self._etm_cache_ttl
+            ):
+                return self._etm_cache
 
-        # field_1 é o campo "Nome" do ativo no Fracttal; nas ETMs ele vem
-        # preenchido exatamente como "Estação Meteorológica", então filtramos
-        # direto na API em vez de varrer o catálogo inteiro (~20 mil ativos).
-        etms = self._get_all_pages("/items", {"field_1": "Estação Meteorológica"})
+            # field_1 é o campo "Nome" do ativo no Fracttal; nas ETMs ele vem
+            # preenchido exatamente como "Estação Meteorológica", então filtramos
+            # direto na API em vez de varrer o catálogo inteiro (~20 mil ativos).
+            etms = self._get_all_pages("/items", {"field_1": "Estação Meteorológica"})
 
-        # Segurança extra: confirma pela descrição, caso o filtro do Fracttal
-        # algum dia passe a ser mais permissivo (contains) do que exato.
-        etms = [
-            item
-            for item in etms
-            if any(
-                marker in (item.get("description") or "").lower()
-                for marker in config.ETM_DESCRIPTION_MARKERS
-            )
-        ]
-        self._etm_cache = etms
-        self._etm_cache_at = now
-        return etms
+            # Segurança extra: confirma pela descrição, caso o filtro do Fracttal
+            # algum dia passe a ser mais permissivo (contains) do que exato.
+            etms = [
+                item
+                for item in etms
+                if any(
+                    marker in (item.get("description") or "").lower()
+                    for marker in config.ETM_DESCRIPTION_MARKERS
+                )
+            ]
+            self._etm_cache = etms
+            self._etm_cache_at = now
+            return etms
 
     def get_usinas(self, force_refresh: bool = False) -> list[dict[str, Any]]:
         """Agrupa as ETMs por usina (groups_1_description)."""
@@ -134,7 +159,7 @@ class FracttalClient:
         for etm in etms:
             nome = etm.get("groups_1_description") or "Usina não identificada"
             if nome not in usinas:
-                usinas[nome] = {"nome": nome, "etms": []}
+                usinas[nome] = {"nome": nome, "cliente": extract_cliente(nome), "etms": []}
             usinas[nome]["etms"].append(
                 {"code": etm.get("code"), "descricao": etm.get("description")}
             )
@@ -169,24 +194,25 @@ class FracttalClient:
         return all_orders
 
     def get_corrective_work_orders(self, force_refresh: bool = False) -> list[dict[str, Any]]:
-        now = time.time()
-        if (
-            not force_refresh
-            and self._orders_cache is not None
-            and (now - self._orders_cache_at) < self._orders_cache_ttl
-        ):
-            return self._orders_cache
+        with self._orders_lock:
+            now = time.time()
+            if (
+                not force_refresh
+                and self._orders_cache is not None
+                and (now - self._orders_cache_at) < self._orders_cache_ttl
+            ):
+                return self._orders_cache
 
-        orders = self.get_all_etm_work_orders(force_refresh=force_refresh)
-        corretivas = [
-            o
-            for o in orders
-            if (o.get("tasks_log_task_type_main") or "").strip().lower()
-            == config.CORRECTIVE_TASK_TYPE.lower()
-        ]
-        self._orders_cache = corretivas
-        self._orders_cache_at = now
-        return corretivas
+            orders = self.get_all_etm_work_orders(force_refresh=force_refresh)
+            corretivas = [
+                o
+                for o in orders
+                if (o.get("tasks_log_task_type_main") or "").strip().lower()
+                == config.CORRECTIVE_TASK_TYPE.lower()
+            ]
+            self._orders_cache = corretivas
+            self._orders_cache_at = now
+            return corretivas
 
 
 fracttal_client = FracttalClient()

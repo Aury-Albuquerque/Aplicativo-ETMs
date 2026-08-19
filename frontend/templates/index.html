@@ -34,17 +34,55 @@
     <!-- SEÇÃO 1: PLANNER -->
     <section id="tab-planner" class="tab-panel active">
       <div id="planner-status" class="status-line"></div>
+
+      <div class="filtros-bar">
+        <div class="filtro-item">
+          <label for="filtro-cliente">Cliente</label>
+          <select id="filtro-cliente">
+            <option value="">Todos</option>
+          </select>
+        </div>
+        <div class="filtro-item">
+          <label for="filtro-usina">Usina</label>
+          <input id="filtro-usina" type="text" placeholder="Buscar usina..." autocomplete="off" />
+        </div>
+        <div class="filtro-item combobox" id="filtro-criador-wrapper">
+          <label for="filtro-criador-input">Criado por</label>
+          <input id="filtro-criador-input" type="text" placeholder="Todos" autocomplete="off" />
+          <div id="filtro-criador-dropdown" class="combobox-dropdown hidden"></div>
+        </div>
+        <div class="filtro-item combobox" id="filtro-responsavel-wrapper">
+          <label for="filtro-responsavel-input">Responsável</label>
+          <input id="filtro-responsavel-input" type="text" placeholder="Todos" autocomplete="off" />
+          <div id="filtro-responsavel-dropdown" class="combobox-dropdown hidden"></div>
+        </div>
+        <button id="filtro-limpar" class="filtro-limpar-btn">Limpar filtros</button>
+      </div>
+
       <div class="board">
         <div class="column">
-          <h2 class="column-title col-nao-iniciada">Não iniciadas <span id="count-nao-iniciada" class="count"></span></h2>
+          <h2 class="column-title col-nao-iniciada">
+            <button class="collapse-btn" data-target="col-nao-iniciada" aria-expanded="true">▾</button>
+            <span>Não iniciadas</span>
+            <span id="count-nao-iniciada" class="count"></span>
+          </h2>
           <div id="col-nao-iniciada" class="card-list"></div>
         </div>
         <div class="column">
-          <h2 class="column-title col-em-andamento">Em andamento <span id="count-em-andamento" class="count"></span></h2>
+          <h2 class="column-title col-em-andamento">
+            <button class="collapse-btn" data-target="col-em-andamento" aria-expanded="true">▾</button>
+            <span>Em andamento</span>
+            <span id="count-em-andamento" class="count"></span>
+          </h2>
+          <div id="tag-filtro-row" class="tag-filtro-row"></div>
           <div id="col-em-andamento" class="card-list"></div>
         </div>
         <div class="column">
-          <h2 class="column-title col-finalizada">Finalizadas <span id="count-finalizada" class="count"></span></h2>
+          <h2 class="column-title col-finalizada">
+            <button class="collapse-btn" data-target="col-finalizada" aria-expanded="true">▾</button>
+            <span>Finalizadas</span>
+            <span id="count-finalizada" class="count"></span>
+          </h2>
           <div id="col-finalizada" class="card-list"></div>
         </div>
       </div>
@@ -52,8 +90,14 @@
 
     <!-- SEÇÃO 2: HISTÓRICO -->
     <section id="tab-historico" class="tab-panel">
-      <div id="historico-lista-view">
+      <div id="historico-clientes-view">
         <div id="historico-status" class="status-line"></div>
+        <div id="clientes-grid" class="clientes-grid"></div>
+      </div>
+      <div id="historico-lista-view" class="hidden">
+        <button id="voltar-clientes" class="back-btn">&larr; Voltar aos clientes</button>
+        <h2 id="cliente-titulo"></h2>
+        <input id="filtro-usina-historico" type="text" class="busca-usina-input" placeholder="Buscar usina..." autocomplete="off" />
         <div id="usinas-grid" class="usinas-grid"></div>
       </div>
       <div id="historico-detalhe-view" class="hidden">

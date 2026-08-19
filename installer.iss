@@ -2,7 +2,7 @@
 ; Compilar com: ISCC installer.iss
 
 #define MyAppName "ETM Grid Co"
-#define MyAppVersion "1.1.1"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "Grid Co."
 #define MyAppExeName "ETM-GridCo.exe"
 
@@ -21,7 +21,7 @@ OutputBaseFilename=ETM-GridCo-Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-SetupIconFile=
+SetupIconFile=assets\icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]

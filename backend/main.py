@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import updater
-from .fracttal_client import fracttal_client
+from .fracttal_client import extract_cliente, fracttal_client
 
 # Quando empacotado com PyInstaller (--onefile), os arquivos de dados (o
 # frontend) são extraídos para uma pasta temporária apontada por
@@ -22,6 +22,20 @@ else:
 FRONTEND_DIR = BASE_DIR / "frontend"
 
 app = FastAPI(title="ETM Grid Co.")
+
+
+@app.middleware("http")
+async def no_cache_estaticos(request, call_next):
+    """Evita que o navegador guarde em cache uma versão antiga do app.js /
+    style.css entre atualizações do app — sem isso, alguém que atualiza o
+    executável mas mantém a mesma aba aberta pode acabar rodando JS velho
+    contra o backend novo (e vice-versa), causando erros difíceis de explicar.
+    """
+    response = await call_next(request)
+    if request.url.path.startswith("/static"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
 
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR / "static"), name="static")
 
@@ -52,12 +66,27 @@ def _status_bucket(raw: dict[str, Any]) -> str:
     return "em_andamento"
 
 
+def _extract_etiquetas_fracttal(raw: dict[str, Any]) -> list[str]:
+    """Etiquetas nativas do Fracttal (campo 'labels' da OS) — ex: "REQUER
+    APROVAÇÃO", "EM VERIFICAÇÃO" etc, definidas dentro do próprio Fracttal.
+    Diferente das etiquetas locais do app, essas vêm prontas de lá.
+    """
+    labels = raw.get("labels") or []
+    return [
+        label.get("description")
+        for label in labels
+        if label.get("enabled", True) and label.get("description")
+    ]
+
+
 def _normalize_os(raw: dict[str, Any]) -> dict[str, Any]:
+    usina = raw.get("groups_1_description") or "Usina não identificada"
     return {
         "folio": raw.get("wo_folio"),
         "titulo": raw.get("description"),
         "nota": raw.get("task_note") or raw.get("note"),
-        "usina": raw.get("groups_1_description") or "Usina não identificada",
+        "usina": usina,
+        "cliente": extract_cliente(usina),
         "etm_codigo": raw.get("code"),
         "etm_descricao": raw.get("items_log_description"),
         "status_id": raw.get("id_status_work_order_task"),
@@ -66,6 +95,8 @@ def _normalize_os(raw: dict[str, Any]) -> dict[str, Any]:
         "status_texto": raw.get("task_status"),
         "tecnico": raw.get("personnel_description"),
         "solicitante": raw.get("requested_by"),
+        "criado_por": raw.get("created_by"),
+        "etiquetas_fracttal": _extract_etiquetas_fracttal(raw),
         "data_criacao": raw.get("creation_date"),
         "data_inicial": raw.get("initial_date"),
         "data_final": raw.get("final_date"),
