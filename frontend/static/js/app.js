@@ -138,7 +138,7 @@ function renderCard(os, { comEtiquetas = false } = {}) {
   const div = document.createElement("div");
   div.className = "os-card";
   div.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${os.em_analise ? '<span class="badge badge-analise">Em análise</span>' : ""}</div>
     <div class="titulo">${os.titulo || "(sem título)"}</div>
     <div class="meta">
       <span>${os.usina}</span>
@@ -507,7 +507,7 @@ function renderHistoryItem(os) {
   const div = document.createElement("div");
   div.className = "history-item";
   div.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Em análise</span>' : ""}</div>
     <div class="titulo">${os.titulo || "(sem título)"}</div>
     <div class="meta">${os.etm_codigo || ""} · criada em ${formatarData(os.data_criacao)}</div>
   `;
@@ -548,11 +548,12 @@ function abrirModal(os) {
   const modal = document.getElementById("os-modal");
   const content = document.getElementById("modal-content");
   content.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Em análise</span>' : ""}</div>
     <h3>${os.titulo || "(sem título)"}</h3>
     <dl>
       <dt>Usina</dt><dd>${os.usina}</dd>
       <dt>Cliente</dt><dd>${os.cliente || "—"}</dd>
+      <dt>Tipo (Fracttal)</dt><dd>${os.tipo_os || "—"}</dd>
       <dt>ETM</dt><dd>${os.etm_descricao || os.etm_codigo || "—"}</dd>
       <dt>Descrição / Nota</dt><dd>${os.nota || "Sem nota registrada"}</dd>
       <dt>Técnico responsável</dt><dd>${os.tecnico || "—"}</dd>
@@ -579,6 +580,9 @@ async function checarAtualizacao() {
   const dispensada = sessionStorage.getItem("etm_update_dispensada");
   try {
     const info = await fetchJson("/api/update-check");
+    const versaoEl = document.getElementById("app-version");
+    if (versaoEl && info.current_version) versaoEl.textContent = `· v${info.current_version}`;
+
     if (!info.update_available || dispensada === info.latest_version) return;
 
     const banner = document.getElementById("update-banner");

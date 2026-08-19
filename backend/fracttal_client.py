@@ -3,7 +3,7 @@
 Responsável por:
 - Autenticar via OAuth2 client_credentials (com cache do token até expirar)
 - Buscar os ativos que são Estações Meteorológicas (ETM)
-- Buscar as Ordens de Serviço corretivas associadas a essas ETMs
+- Buscar as Ordens de Serviço relevantes (corretivas + em análise) dessas ETMs
 """
 from __future__ import annotations
 
@@ -193,7 +193,10 @@ class FracttalClient:
                     print(f"[fracttal_client] Falha ao buscar OS de {code}: {exc}")
         return all_orders
 
-    def get_corrective_work_orders(self, force_refresh: bool = False) -> list[dict[str, Any]]:
+    def get_relevant_work_orders(self, force_refresh: bool = False) -> list[dict[str, Any]]:
+        """OS de ETM relevantes pro app: as Corretivas (indo a campo) E as que
+        ainda estão em análise, atribuídas a um dos ANALISTAS_ETM (ver config).
+        """
         with self._orders_lock:
             now = time.time()
             if (
@@ -204,15 +207,19 @@ class FracttalClient:
                 return self._orders_cache
 
             orders = self.get_all_etm_work_orders(force_refresh=force_refresh)
-            corretivas = [
-                o
-                for o in orders
-                if (o.get("tasks_log_task_type_main") or "").strip().lower()
-                == config.CORRECTIVE_TASK_TYPE.lower()
-            ]
-            self._orders_cache = corretivas
+            relevantes = [o for o in orders if _is_corretiva(o) or _is_em_analise(o)]
+            self._orders_cache = relevantes
             self._orders_cache_at = now
-            return corretivas
+            return relevantes
+
+
+def _is_corretiva(raw: dict[str, Any]) -> bool:
+    return (raw.get("tasks_log_task_type_main") or "").strip().lower() == config.CORRECTIVE_TASK_TYPE.lower()
+
+
+def _is_em_analise(raw: dict[str, Any]) -> bool:
+    responsavel = (raw.get("personnel_description") or "").strip().lower()
+    return responsavel in config.ANALISTAS_ETM
 
 
 fracttal_client = FracttalClient()

@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import updater
+from . import config, updater
 from .fracttal_client import extract_cliente, fracttal_client
 
 # Quando empacotado com PyInstaller (--onefile), os arquivos de dados (o
@@ -81,6 +81,12 @@ def _extract_etiquetas_fracttal(raw: dict[str, Any]) -> list[str]:
 
 def _normalize_os(raw: dict[str, Any]) -> dict[str, Any]:
     usina = raw.get("groups_1_description") or "Usina não identificada"
+    tipo_os = (raw.get("tasks_log_task_type_main") or "").strip()
+    tecnico = (raw.get("personnel_description") or "").strip()
+    eh_corretiva = tipo_os.lower() == config.CORRECTIVE_TASK_TYPE.lower()
+    # "Em análise": ainda não é uma OS corretiva (não foi a campo), mas está
+    # atribuída a um dos analistas de ETM — ver config.ANALISTAS_ETM.
+    em_analise = not eh_corretiva and tecnico.lower() in config.ANALISTAS_ETM
     return {
         "folio": raw.get("wo_folio"),
         "titulo": raw.get("description"),
@@ -93,6 +99,8 @@ def _normalize_os(raw: dict[str, Any]) -> dict[str, Any]:
         "status_os_id": raw.get("id_status_work_order"),
         "status_bucket": _status_bucket(raw),
         "status_texto": raw.get("task_status"),
+        "tipo_os": tipo_os or None,
+        "em_analise": em_analise,
         "tecnico": raw.get("personnel_description"),
         "solicitante": raw.get("requested_by"),
         "criado_por": raw.get("created_by"),
@@ -113,7 +121,7 @@ def _normalize_os(raw: dict[str, Any]) -> dict[str, Any]:
 @app.get("/api/planner")
 def get_planner(refresh: bool = False) -> dict[str, Any]:
     try:
-        raw_orders = fracttal_client.get_corrective_work_orders(force_refresh=refresh)
+        raw_orders = fracttal_client.get_relevant_work_orders(force_refresh=refresh)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Erro ao consultar Fracttal: {exc}") from exc
 
@@ -154,7 +162,7 @@ def get_usinas(refresh: bool = False) -> list[dict[str, Any]]:
 @app.get("/api/usinas/{usina}/historico")
 def get_historico_usina(usina: str, refresh: bool = False) -> list[dict[str, Any]]:
     try:
-        raw_orders = fracttal_client.get_corrective_work_orders(force_refresh=refresh)
+        raw_orders = fracttal_client.get_relevant_work_orders(force_refresh=refresh)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Erro ao consultar Fracttal: {exc}") from exc
 

@@ -31,6 +31,12 @@ ETM_DESCRIPTION_MARKERS = ["estação meteorológica", "estacao meteorologica"]
 # Valor exato do campo tasks_log_task_type_main que identifica OS corretivas
 CORRECTIVE_TASK_TYPE = "Corretiva"
 
+# Antes de uma OS de ETM virar corretiva (ida a campo), ela passa por uma
+# etapa de análise, feita por essas pessoas. Trazemos também as OS de ETM
+# atribuídas a elas, mesmo que ainda não estejam marcadas como "Corretiva",
+# pra dar visibilidade dessa fila de análise no Planner.
+ANALISTAS_ETM = {"joão vieira", "aury albuquerque"}
+
 # ----------------------------------------------------------------------
 # Atualização automática (releases do GitHub)
 # ----------------------------------------------------------------------
