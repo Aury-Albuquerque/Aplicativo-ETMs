@@ -169,7 +169,13 @@ class FracttalClient:
     # Ordens de Serviço
     # ------------------------------------------------------------------
     def _get_work_orders_for_asset(self, code: str) -> list[dict[str, Any]]:
-        return self._get_all_pages("/work_orders", {"code_asset": code})
+        # Uma tentativa extra: o Fracttal ocasionalmente demora além do timeout
+        # numa ETM específica (rede instável, sobrecarga momentânea do lado
+        # deles) — antes de desistir dessa ETM, tenta mais uma vez.
+        try:
+            return self._get_all_pages("/work_orders", {"code_asset": code})
+        except requests.RequestException:
+            return self._get_all_pages("/work_orders", {"code_asset": code})
 
     def get_all_etm_work_orders(self, force_refresh: bool = False) -> list[dict[str, Any]]:
         """Busca todas as OS de todas as ETMs (não filtra tipo/status).
@@ -188,8 +194,10 @@ class FracttalClient:
                 code = futures[future]
                 try:
                     all_orders.extend(future.result())
-                except requests.HTTPError as exc:
-                    # Não deixa uma ETM com erro derrubar a consulta inteira
+                except requests.RequestException as exc:
+                    # Não deixa uma ETM com erro (timeout, conexão etc.)
+                    # derrubar a consulta inteira — só essa ETM fica de fora
+                    # desta atualização, e o resto segue normalmente.
                     print(f"[fracttal_client] Falha ao buscar OS de {code}: {exc}")
         return all_orders
 
