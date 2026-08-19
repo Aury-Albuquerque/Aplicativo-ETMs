@@ -49,6 +49,17 @@ _DEFAULT_GITHUB_TOKEN = "github_pat_11CIBNX3I0KlsJLeZ9HKvc_cGYloy39SGyXb1kUyBJkX
 GITHUB_UPDATE_TOKEN = os.getenv("GITHUB_UPDATE_TOKEN") or _DEFAULT_GITHUB_TOKEN
 GITHUB_API_BASE = "https://api.github.com"
 
+# ----------------------------------------------------------------------
+# Comentários compartilhados por OS (guardados como Issues do mesmo repo)
+# ----------------------------------------------------------------------
+# Token separado, com permissão SÓ de "Issues: Read and write" (sem acesso
+# ao código) — mesmo que alguém extraia esse valor do .exe, o máximo que
+# consegue é ler/criar comentários, nunca alterar o código do app.
+_DEFAULT_GITHUB_COMMENTS_TOKEN = (
+    "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"
+)
+GITHUB_COMMENTS_TOKEN = os.getenv("GITHUB_COMMENTS_TOKEN") or _DEFAULT_GITHUB_COMMENTS_TOKEN
+
 if not FRACTTAL_CLIENT_ID or not FRACTTAL_CLIENT_SECRET:
     raise RuntimeError(
         "FRACTTAL_CLIENT_ID / FRACTTAL_CLIENT_SECRET não configurados. "

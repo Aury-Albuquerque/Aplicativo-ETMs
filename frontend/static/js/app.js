@@ -1,5 +1,6 @@
 const TAG_OPTIONS = ["OS em campo", "Stand By", "Validação Final"];
 const TAGS_STORAGE_KEY = "etm_tags_por_os";
+const NOME_USUARIO_STORAGE_KEY = "etm_nome_usuario";
 
 const state = {
   usinas: [],
@@ -14,6 +15,7 @@ const state = {
     responsavel: "",
   },
   tagsSelecionadas: new Set(),
+  modalFolioAtual: null,
 };
 
 // ---------------------------------------------------------------------
@@ -24,6 +26,21 @@ function formatarData(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function formatarDataHora(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const data = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return `${data} ${hora}`;
+}
+
+function escapeHtml(texto) {
+  const div = document.createElement("div");
+  div.textContent = texto ?? "";
+  return div.innerHTML;
 }
 
 const BADGE_LABEL = {
@@ -44,6 +61,22 @@ async function fetchJson(url, options) {
     throw new Error(body.detail || `Erro ${resp.status}`);
   }
   return resp.json();
+}
+
+// ---------------------------------------------------------------------
+// Nome do usuário (guardado neste PC, usado como autor dos comentários)
+// ---------------------------------------------------------------------
+function getNomeUsuario() {
+  return (localStorage.getItem(NOME_USUARIO_STORAGE_KEY) || "").trim();
+}
+
+function initNomeUsuario() {
+  const input = document.getElementById("nome-usuario-input");
+  input.value = getNomeUsuario();
+  input.addEventListener("input", () => {
+    localStorage.setItem(NOME_USUARIO_STORAGE_KEY, input.value.trim());
+    atualizarEstadoInputComentario();
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -134,11 +167,24 @@ function renderTagsDoCard(os) {
   `;
 }
 
+const STATUS_FRACTTAL_CLASS = {
+  "Não iniciada": "badge-fracttal-nao-iniciada",
+  "Em progresso": "badge-fracttal-progresso",
+  "Pausada": "badge-fracttal-pausada",
+  "Finalizada": "badge-fracttal-finalizada",
+};
+
+function statusFracttalBadgeHtml(os) {
+  if (!os.status_fracttal) return "";
+  const classe = STATUS_FRACTTAL_CLASS[os.status_fracttal] || "";
+  return `<span class="badge badge-fracttal ${classe}" title="Status da tarefa no Fracttal">${os.status_fracttal}</span>`;
+}
+
 function renderCard(os, { comEtiquetas = false } = {}) {
   const div = document.createElement("div");
   div.className = "os-card";
   div.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${os.em_analise ? '<span class="badge badge-analise">Em análise</span>' : ""}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${os.em_analise ? '<span class="badge badge-analise">Em análise</span>' : ""} ${statusFracttalBadgeHtml(os)}</div>
     <div class="titulo">${os.titulo || "(sem título)"}</div>
     <div class="meta">
       <span>${os.usina}</span>
@@ -507,7 +553,7 @@ function renderHistoryItem(os) {
   const div = document.createElement("div");
   div.className = "history-item";
   div.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Em análise</span>' : ""}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Em análise</span>' : ""} ${statusFracttalBadgeHtml(os)}</div>
     <div class="titulo">${os.titulo || "(sem título)"}</div>
     <div class="meta">${os.etm_codigo || ""} · criada em ${formatarData(os.data_criacao)}</div>
   `;
@@ -548,7 +594,7 @@ function abrirModal(os) {
   const modal = document.getElementById("os-modal");
   const content = document.getElementById("modal-content");
   content.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Em análise</span>' : ""}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Em análise</span>' : ""} ${statusFracttalBadgeHtml(os)}</div>
     <h3>${os.titulo || "(sem título)"}</h3>
     <dl>
       <dt>Usina</dt><dd>${os.usina}</dd>
@@ -567,10 +613,91 @@ function abrirModal(os) {
     ${os.url ? `<a class="fracttal-link" href="${os.url}" target="_blank" rel="noopener">Abrir no Fracttal ↗</a>` : ""}
   `;
   modal.classList.remove("hidden");
+
+  state.modalFolioAtual = os.folio;
+  document.getElementById("comentario-texto").value = "";
+  atualizarEstadoInputComentario();
+  carregarComentarios(os.folio);
 }
 
 function fecharModal() {
   document.getElementById("os-modal").classList.add("hidden");
+  state.modalFolioAtual = null;
+}
+
+// ---------------------------------------------------------------------
+// Comentários (compartilhados com todo o time, via GitHub)
+// ---------------------------------------------------------------------
+function renderComentario(c) {
+  const div = document.createElement("div");
+  div.className = "comentario-item";
+  div.innerHTML = `
+    <div class="comentario-cabecalho">
+      <span class="comentario-autor">${escapeHtml(c.autor)}</span>
+      <span class="comentario-data">${formatarDataHora(c.data)}</span>
+    </div>
+    <div class="comentario-texto">${escapeHtml(c.texto)}</div>
+  `;
+  return div;
+}
+
+async function carregarComentarios(folio) {
+  const lista = document.getElementById("comentarios-lista");
+  lista.innerHTML = `<div class="empty-msg">Carregando comentários...</div>`;
+  try {
+    const comentarios = await fetchJson(`/api/os/${encodeURIComponent(folio)}/comentarios`);
+    // Não deixa uma resposta atrasada de uma OS antiga sobrescrever a atual
+    if (state.modalFolioAtual !== folio) return;
+    lista.innerHTML = "";
+    if (comentarios.length === 0) {
+      lista.innerHTML = `<div class="empty-msg">Nenhum comentário ainda. Seja o primeiro!</div>`;
+      return;
+    }
+    comentarios.forEach((c) => lista.appendChild(renderComentario(c)));
+    lista.scrollTop = lista.scrollHeight;
+  } catch (err) {
+    lista.innerHTML = `<div class="empty-msg">Erro ao carregar comentários: ${err.message}</div>`;
+  }
+}
+
+function atualizarEstadoInputComentario() {
+  const temNome = !!getNomeUsuario();
+  document.getElementById("comentario-aviso-nome").classList.toggle("hidden", temNome);
+  document.getElementById("comentario-enviar-btn").disabled = !temNome;
+  document.getElementById("comentario-texto").disabled = !temNome;
+}
+
+async function enviarComentario() {
+  const nome = getNomeUsuario();
+  const textarea = document.getElementById("comentario-texto");
+  const texto = textarea.value.trim();
+  const folio = state.modalFolioAtual;
+
+  if (!nome) {
+    document.getElementById("nome-usuario-input").focus();
+    return;
+  }
+  if (!texto || !folio) return;
+
+  const btn = document.getElementById("comentario-enviar-btn");
+  btn.disabled = true;
+  try {
+    const novoComentario = await fetchJson(`/api/os/${encodeURIComponent(folio)}/comentarios`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ autor: nome, texto }),
+    });
+    const lista = document.getElementById("comentarios-lista");
+    const vazio = lista.querySelector(".empty-msg");
+    if (vazio) vazio.remove();
+    lista.appendChild(renderComentario(novoComentario));
+    lista.scrollTop = lista.scrollHeight;
+    textarea.value = "";
+  } catch (err) {
+    alert(`Não foi possível enviar o comentário: ${err.message}`);
+  } finally {
+    btn.disabled = !getNomeUsuario();
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -626,6 +753,7 @@ function dispensarAtualizacao() {
 // ---------------------------------------------------------------------
 function init() {
   initTabs();
+  initNomeUsuario();
   initColunasRetrateis();
   initFiltros();
   renderTagFiltroRow();
@@ -650,6 +778,13 @@ function init() {
   });
   document.getElementById("modal-close").addEventListener("click", fecharModal);
   document.querySelector(".modal-backdrop").addEventListener("click", fecharModal);
+  document.getElementById("comentario-enviar-btn").addEventListener("click", enviarComentario);
+  document.getElementById("comentario-texto").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      enviarComentario();
+    }
+  });
 
   document.getElementById("update-apply-btn").addEventListener("click", aplicarAtualizacao);
   document.getElementById("update-dismiss-btn").addEventListener("click", dispensarAtualizacao);

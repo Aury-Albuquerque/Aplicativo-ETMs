@@ -94,6 +94,33 @@ body {
   color: var(--navy);
 }
 
+.nome-usuario-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.nome-usuario-wrapper label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.nome-usuario-wrapper input {
+  background: var(--navy-lighter);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-family: inherit;
+  width: 160px;
+}
+
+.nome-usuario-wrapper input:focus { outline: none; border-color: var(--lime); }
+
 .refresh-btn {
   background: var(--navy-lighter);
   border: 1px solid var(--border);
@@ -579,6 +606,13 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
 .badge-cancelada { background: rgba(182,177,201,0.18); color: var(--text-muted); }
 .badge-analise { background: rgba(186,120,255,0.18); color: #c79bff; }
 
+/* Status "cru" da tarefa no Fracttal (Não iniciada/Em progresso/Pausada/Finalizada) */
+.badge-fracttal { border: 1px solid transparent; }
+.badge-fracttal-nao-iniciada { background: rgba(182,177,201,0.16); color: var(--text-muted); }
+.badge-fracttal-progresso { background: rgba(64,150,255,0.16); color: #6fb2ff; }
+.badge-fracttal-pausada { background: rgba(255,176,32,0.18); color: var(--warning); }
+.badge-fracttal-finalizada { background: rgba(75,208,139,0.18); color: var(--ok); }
+
 /* ---------- Modal ---------- */
 .modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; }
 .modal.hidden { display: none; }
@@ -595,6 +629,8 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
   overflow-y: auto;
 }
 
+.modal-card-wide { width: min(880px, 94vw); }
+
 .modal-close {
   position: absolute;
   top: 10px;
@@ -604,9 +640,16 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
   color: var(--text-muted);
   font-size: 22px;
   cursor: pointer;
+  z-index: 2;
 }
 
 .modal-close:hover { color: var(--text); }
+
+.modal-body-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 26px;
+}
 
 #modal-content h3 { margin: 0 0 4px; font-size: 17px; }
 #modal-content .folio { color: var(--lime); font-size: 12px; font-weight: 700; }
@@ -623,6 +666,114 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
   text-decoration: none;
   font-weight: 700;
   font-size: 13px;
+}
+
+/* ---------- Comentários (chat da OS) ---------- */
+.modal-comments {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  padding-left: 22px;
+}
+
+.modal-comments h4 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+}
+
+.comentarios-lista {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  max-height: 320px;
+  min-height: 80px;
+  margin-bottom: 12px;
+  padding-right: 4px;
+}
+
+.comentario-item {
+  background: var(--navy-lighter);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.comentario-item .comentario-cabecalho {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.comentario-item .comentario-autor {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--lime);
+}
+
+.comentario-item .comentario-data {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.comentario-item .comentario-texto {
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.comentario-input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.comentario-input-row textarea {
+  background: var(--navy-lighter);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.comentario-input-row textarea:focus { outline: none; border-color: var(--lime); }
+
+#comentario-enviar-btn {
+  align-self: flex-end;
+  background: var(--lime);
+  color: var(--navy);
+  border: none;
+  padding: 7px 18px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+#comentario-enviar-btn:hover { filter: brightness(1.08); }
+#comentario-enviar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.comentario-aviso {
+  font-size: 12px;
+  color: var(--warning);
+  margin-bottom: 8px;
+}
+
+.comentario-aviso.hidden { display: none; }
+
+@media (max-width: 720px) {
+  .modal-body-grid { grid-template-columns: 1fr; }
+  .modal-comments { border-left: none; border-top: 1px solid var(--border); padding-left: 0; padding-top: 18px; margin-top: 6px; }
 }
 
 @media (max-width: 900px) {

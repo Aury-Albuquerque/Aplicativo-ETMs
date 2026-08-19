@@ -8,8 +8,10 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from . import config, updater
+from .comments import comments_client
 from .fracttal_client import extract_cliente, fracttal_client
 
 # Quando empacotado com PyInstaller (--onefile), os arquivos de dados (o
@@ -79,6 +81,18 @@ def _extract_etiquetas_fracttal(raw: dict[str, Any]) -> list[str]:
     ]
 
 
+# Rótulo em PT-BR do status da tarefa exatamente como o Fracttal mostra na
+# tela dele (campo id_status_work_order_task). Diferente do "status_bucket"
+# (que é a nossa classificação de coluna do Planner, considerando também o
+# status da OS), este é só uma tradução direta do status bruto do Fracttal.
+_STATUS_FRACTTAL_LABEL = {
+    0: "Não iniciada",
+    1: "Em progresso",
+    2: "Pausada",
+    3: "Finalizada",
+}
+
+
 def _normalize_os(raw: dict[str, Any]) -> dict[str, Any]:
     usina = raw.get("groups_1_description") or "Usina não identificada"
     tipo_os = (raw.get("tasks_log_task_type_main") or "").strip()
@@ -99,6 +113,7 @@ def _normalize_os(raw: dict[str, Any]) -> dict[str, Any]:
         "status_os_id": raw.get("id_status_work_order"),
         "status_bucket": _status_bucket(raw),
         "status_texto": raw.get("task_status"),
+        "status_fracttal": _STATUS_FRACTTAL_LABEL.get(raw.get("id_status_work_order_task")),
         "tipo_os": tipo_os or None,
         "em_analise": em_analise,
         "tecnico": raw.get("personnel_description"),
@@ -173,6 +188,34 @@ def get_historico_usina(usina: str, refresh: bool = False) -> list[dict[str, Any
     ]
     historico.sort(key=lambda o: o.get("data_criacao") or "", reverse=True)
     return historico
+
+
+# ----------------------------------------------------------------------
+# Comentários (compartilhados entre todo o time, guardados no GitHub)
+# ----------------------------------------------------------------------
+class ComentarioIn(BaseModel):
+    autor: str = Field(min_length=1, max_length=80)
+    texto: str = Field(min_length=1, max_length=4000)
+
+
+@app.get("/api/os/{folio}/comentarios")
+def listar_comentarios(folio: str) -> list[dict[str, Any]]:
+    try:
+        return comments_client.list_comments(folio)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Erro ao carregar comentários: {exc}") from exc
+
+
+@app.post("/api/os/{folio}/comentarios")
+def criar_comentario(folio: str, comentario: ComentarioIn) -> dict[str, Any]:
+    autor = comentario.autor.strip()
+    texto = comentario.texto.strip()
+    if not autor or not texto:
+        raise HTTPException(status_code=422, detail="Nome e comentário não podem ficar em branco.")
+    try:
+        return comments_client.add_comment(folio, autor, texto)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Erro ao salvar comentário: {exc}") from exc
 
 
 # ----------------------------------------------------------------------
