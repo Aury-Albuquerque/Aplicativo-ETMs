@@ -30,6 +30,12 @@ const state = {
   statusPosOsOpcoes: STATUS_POS_OS_OPCOES_PADRAO,
   tagOpcoes: TAG_OPCOES_PADRAO,
   chatUsinaAberto: false,
+  abertasFiltros: {
+    cliente: "",
+    criadoPor: "",
+    tiposTrabalho: new Set(["analise", "campo"]),
+  },
+  usinaAbertaAtual: null,
 };
 
 // ---------------------------------------------------------------------
@@ -638,10 +644,162 @@ async function carregarPlanner(refresh = false) {
 
     aplicarFiltrosERenderizar();
     statusEl.textContent = `${data.total} OS corretivas de ETM · atualizado agora`;
+
+    popularFiltroClienteAbertas();
+    renderUsinasAbertasGrid();
+    if (state.usinaAbertaAtual) renderUsinaAbertaBoard();
   } catch (err) {
     statusEl.textContent = `Erro ao carregar: ${err.message}`;
     statusEl.classList.add("error");
   }
+}
+
+// ---------------------------------------------------------------------
+// Estações em Aberto (resumo: usinas com pelo menos 1 OS não iniciada ou
+// em andamento — filtráveis por cliente/criado por/tipo de trabalho)
+// ---------------------------------------------------------------------
+function passaFiltrosAbertas(os) {
+  const f = state.abertasFiltros;
+  if (f.cliente && os.cliente !== f.cliente) return false;
+  if (f.criadoPor && (os.criado_por || "").trim() !== f.criadoPor) return false;
+  const tipoAtual = os.em_analise ? "analise" : "campo";
+  if (!f.tiposTrabalho.has(tipoAtual)) return false;
+  return true;
+}
+
+function computeUsinasAbertas() {
+  if (!state.plannerData) return [];
+  const abertas = [...state.plannerData.nao_iniciadas, ...state.plannerData.em_andamento].filter(
+    passaFiltrosAbertas
+  );
+  const porUsina = new Map();
+  abertas.forEach((os) => {
+    if (!porUsina.has(os.usina)) {
+      porUsina.set(os.usina, { nome: os.usina, cliente: os.cliente, quantidade: 0 });
+    }
+    porUsina.get(os.usina).quantidade += 1;
+  });
+  return Array.from(porUsina.values()).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+function renderUsinaAbertaCard(info) {
+  const div = document.createElement("div");
+  div.className = "usina-card";
+  div.innerHTML = `
+    <h3>${info.nome}</h3>
+    <p>${info.quantidade} OS em aberto</p>
+  `;
+  div.addEventListener("click", () => abrirUsinaAberta(info.nome));
+  return div;
+}
+
+function renderUsinasAbertasGrid() {
+  const grid = document.getElementById("eea-usinas-grid");
+  const status = document.getElementById("eea-status");
+  if (!grid) return;
+
+  const usinas = computeUsinasAbertas();
+  grid.innerHTML = "";
+  if (usinas.length === 0) {
+    grid.innerHTML = `<div class="empty-msg">Nenhuma estação com OS em aberto pros filtros escolhidos</div>`;
+  } else {
+    usinas.forEach((info) => grid.appendChild(renderUsinaAbertaCard(info)));
+  }
+  const totalOs = usinas.reduce((soma, u) => soma + u.quantidade, 0);
+  status.textContent = `${usinas.length} estaç${usinas.length === 1 ? "ão" : "ões"} · ${totalOs} OS em aberto`;
+}
+
+function popularFiltroClienteAbertas() {
+  if (!state.plannerData) return;
+  const select = document.getElementById("eea-filtro-cliente");
+  if (!select) return;
+  const valorAtual = select.value;
+  const abertas = [...state.plannerData.nao_iniciadas, ...state.plannerData.em_andamento];
+  const clientes = Array.from(new Set(abertas.map((o) => o.cliente).filter(Boolean))).sort();
+  select.innerHTML =
+    `<option value="">Todos</option>` + clientes.map((c) => `<option value="${c}">${c}</option>`).join("");
+  select.value = clientes.includes(valorAtual) ? valorAtual : "";
+}
+
+function initFiltrosAbertas() {
+  const selectCliente = document.getElementById("eea-filtro-cliente");
+  selectCliente.addEventListener("change", () => {
+    state.abertasFiltros.cliente = selectCliente.value;
+    renderUsinasAbertasGrid();
+  });
+
+  initCombobox({
+    wrapperId: "eea-filtro-criador-wrapper",
+    inputId: "eea-filtro-criador-input",
+    dropdownId: "eea-filtro-criador-dropdown",
+    getOpcoes: () => state.criadoresDisponiveis || [],
+    onSelect: (nome) => {
+      state.abertasFiltros.criadoPor = nome;
+      renderUsinasAbertasGrid();
+    },
+    onClear: () => {
+      state.abertasFiltros.criadoPor = "";
+      renderUsinasAbertasGrid();
+    },
+  });
+
+  document.querySelectorAll('#tab-abertas .filtro-chips-inline .tag-chip[data-tipo-abertas]').forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const tipo = chip.dataset.tipoAbertas;
+      if (state.abertasFiltros.tiposTrabalho.has(tipo)) {
+        if (state.abertasFiltros.tiposTrabalho.size === 1) return;
+        state.abertasFiltros.tiposTrabalho.delete(tipo);
+      } else {
+        state.abertasFiltros.tiposTrabalho.add(tipo);
+      }
+      chip.classList.toggle("selected");
+      renderUsinasAbertasGrid();
+    });
+  });
+
+  document.getElementById("eea-filtro-limpar").addEventListener("click", () => {
+    state.abertasFiltros = { cliente: "", criadoPor: "", tiposTrabalho: new Set(["analise", "campo"]) };
+    selectCliente.value = "";
+    document.getElementById("eea-filtro-criador-input").value = "";
+    document
+      .querySelectorAll("#tab-abertas .filtro-chips-inline .tag-chip")
+      .forEach((c) => c.classList.add("selected"));
+    renderUsinasAbertasGrid();
+  });
+}
+
+function renderUsinaAbertaBoard() {
+  if (!state.plannerData || !state.usinaAbertaAtual) return;
+  const nome = state.usinaAbertaAtual;
+  const doUsina = (lista) => (lista || []).filter((os) => os.usina === nome);
+  renderColumn("eea-col-nao-iniciada", "eea-count-nao-iniciada", doUsina(state.plannerData.nao_iniciadas));
+  renderColumn("eea-col-em-andamento", "eea-count-em-andamento", doUsina(state.plannerData.em_andamento), {
+    comEtiquetas: true,
+  });
+  renderColumn("eea-col-finalizada", "eea-count-finalizada", doUsina(state.plannerData.finalizadas));
+  renderColumn("eea-col-cancelada", "eea-count-cancelada", doUsina(state.plannerData.canceladas));
+}
+
+function abrirUsinaAberta(nomeUsina) {
+  state.usinaAbertaAtual = nomeUsina;
+  document.getElementById("eea-lista-view").classList.add("hidden");
+  document.getElementById("eea-detalhe-view").classList.remove("hidden");
+  document.getElementById("eea-usina-titulo").textContent = nomeUsina;
+  renderUsinaAbertaBoard();
+}
+
+function voltarListaAbertas() {
+  document.getElementById("eea-detalhe-view").classList.add("hidden");
+  document.getElementById("eea-lista-view").classList.remove("hidden");
+  state.usinaAbertaAtual = null;
+}
+
+function irParaHistoricoDaUsina(nomeUsina) {
+  const usinaInfo = state.usinas.find((u) => u.nome === nomeUsina);
+  const cliente = usinaInfo ? usinaInfo.cliente : null;
+  document.querySelector('.tab-btn[data-tab="historico"]').click();
+  if (cliente) abrirCliente(cliente);
+  abrirHistoricoUsina(nomeUsina);
 }
 
 // ---------------------------------------------------------------------
@@ -1036,6 +1194,7 @@ function init() {
   initNomeUsuario();
   initColunasRetrateis();
   initFiltros();
+  initFiltrosAbertas();
   renderTagFiltroRow();
   carregarPlanner();
   carregarUsinas();
@@ -1075,6 +1234,10 @@ function init() {
 
   document.getElementById("voltar-clientes").addEventListener("click", voltarParaClientes);
   document.getElementById("voltar-usinas").addEventListener("click", voltarParaUsinas);
+  document.getElementById("eea-voltar-btn").addEventListener("click", voltarListaAbertas);
+  document.getElementById("eea-ver-historico-btn").addEventListener("click", () => {
+    if (state.usinaAbertaAtual) irParaHistoricoDaUsina(state.usinaAbertaAtual);
+  });
   document.getElementById("filtro-usina-historico").addEventListener("input", (e) => {
     renderUsinasGrid(e.target.value);
   });

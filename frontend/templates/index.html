@@ -18,6 +18,7 @@
     <nav class="tabs">
       <button class="tab-btn active" data-tab="planner">Planner</button>
       <button class="tab-btn" data-tab="historico">Histórico</button>
+      <button class="tab-btn" data-tab="abertas">Estações em Aberto</button>
     </nav>
     <div class="nome-usuario-wrapper">
       <label for="nome-usuario-input">Seu nome</label>
@@ -136,6 +137,79 @@
           Mostrar canceladas
         </label>
         <div id="usina-historico-lista" class="history-list"></div>
+      </div>
+    </section>
+
+    <!-- SEÇÃO 3: ESTAÇÕES EM ABERTO -->
+    <section id="tab-abertas" class="tab-panel">
+      <div id="eea-lista-view">
+        <div id="eea-status" class="status-line"></div>
+
+        <div class="filtros-bar">
+          <div class="filtro-item">
+            <label for="eea-filtro-cliente">Cliente</label>
+            <select id="eea-filtro-cliente">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="filtro-item combobox" id="eea-filtro-criador-wrapper">
+            <label for="eea-filtro-criador-input">Criado por</label>
+            <input id="eea-filtro-criador-input" type="text" placeholder="Todos" autocomplete="off" />
+            <div id="eea-filtro-criador-dropdown" class="combobox-dropdown hidden"></div>
+          </div>
+          <div class="filtro-item">
+            <label>Tipo de trabalho</label>
+            <div class="filtro-chips-inline">
+              <button type="button" class="tag-chip selected" data-tipo-abertas="analise">Análise de Engenharia</button>
+              <button type="button" class="tag-chip selected" data-tipo-abertas="campo">Campo</button>
+            </div>
+          </div>
+          <button id="eea-filtro-limpar" class="filtro-limpar-btn">Limpar filtros</button>
+        </div>
+
+        <div id="eea-usinas-grid" class="usinas-grid"></div>
+      </div>
+
+      <div id="eea-detalhe-view" class="hidden">
+        <button id="eea-voltar-btn" class="back-btn">&larr; Voltar às estações em aberto</button>
+        <div class="usina-titulo-row">
+          <h2 id="eea-usina-titulo"></h2>
+          <button id="eea-ver-historico-btn" class="abrir-chat-usina-btn">Ver histórico desta usina →</button>
+        </div>
+        <div class="board">
+          <div class="column">
+            <h2 class="column-title col-nao-iniciada">
+              <button class="collapse-btn" data-target="eea-col-nao-iniciada" aria-expanded="true">▾</button>
+              <span>Não iniciadas</span>
+              <span id="eea-count-nao-iniciada" class="count"></span>
+            </h2>
+            <div id="eea-col-nao-iniciada" class="card-list"></div>
+          </div>
+          <div class="column">
+            <h2 class="column-title col-em-andamento">
+              <button class="collapse-btn" data-target="eea-col-em-andamento" aria-expanded="true">▾</button>
+              <span>Em andamento</span>
+              <span id="eea-count-em-andamento" class="count"></span>
+            </h2>
+            <div id="eea-col-em-andamento" class="card-list"></div>
+          </div>
+          <div class="column">
+            <h2 class="column-title col-finalizada">
+              <button class="collapse-btn" data-target="eea-col-finalizada" aria-expanded="true">▾</button>
+              <span>Finalizadas</span>
+              <span id="eea-count-finalizada" class="count"></span>
+            </h2>
+            <div id="eea-col-finalizada" class="card-list"></div>
+          </div>
+          <div class="column">
+            <h2 class="column-title col-cancelada">
+              <button class="collapse-btn" data-target="eea-col-cancelada" aria-expanded="true">▾</button>
+              <span>Canceladas</span>
+              <span id="eea-count-cancelada" class="count"></span>
+            </h2>
+            <div id="eea-col-cancelada" class="card-list"></div>
+          </div>
+        </div>
       </div>
     </section>
   </main>
