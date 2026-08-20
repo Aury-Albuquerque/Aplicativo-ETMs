@@ -502,6 +502,19 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
 
 .diagnostico-btn:hover { border-color: #ff9d6c; color: #ff9d6c; }
 
+.status-pos-os-btn {
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.status-pos-os-btn:hover { border-color: #5cd6c0; color: #5cd6c0; }
+
 .diagnostico-limpar-btn {
   background: none;
   border: none;
@@ -666,6 +679,7 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
 .badge-cancelada { background: rgba(182,177,201,0.18); color: var(--text-muted); }
 .badge-analise { background: rgba(186,120,255,0.18); color: #c79bff; }
 .badge-diagnostico { background: rgba(255,157,108,0.18); color: #ff9d6c; }
+.badge-status-pos-os { background: rgba(92,214,192,0.18); color: #5cd6c0; }
 
 /* Status "cru" da tarefa no Fracttal (Não iniciada/Em progresso/Pausada/Finalizada) */
 .badge-fracttal { border: 1px solid transparent; }
@@ -840,4 +854,90 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
 @media (max-width: 900px) {
   .board { grid-template-columns: 1fr; }
   .topbar { flex-wrap: wrap; }
+}
+
+/* ---------- Chat consolidado da usina (painel deslizante) ---------- */
+.usina-titulo-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+
+.usina-titulo-row h2 { margin: 0; }
+
+.abrir-chat-usina-btn {
+  background: var(--navy-lighter);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.abrir-chat-usina-btn:hover { border-color: var(--lime); color: var(--lime); }
+
+.chat-usina-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 55;
+}
+
+.chat-usina-overlay.hidden { display: none; }
+
+.chat-usina-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(440px, 90vw);
+  background: var(--navy-soft);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 30px rgba(0,0,0,0.4);
+  z-index: 56;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 22px;
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+}
+
+.chat-usina-panel.aberto { transform: translateX(0); }
+
+.chat-usina-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.chat-usina-header h3 { margin: 0; font-size: 16px; }
+.chat-usina-header .modal-close { position: static; font-size: 22px; }
+
+.chat-usina-lista {
+  flex: 1;
+  max-height: none;
+}
+
+.comentario-item .comentario-os-ref {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--lime);
+  background: rgba(170,220,33,0.12);
+  padding: 1px 7px;
+  border-radius: 999px;
+  margin-bottom: 4px;
+  cursor: pointer;
+}
+
+.comentario-item .comentario-os-ref:hover { background: rgba(170,220,33,0.22); }
+
+@media (max-width: 520px) {
+  .chat-usina-panel { width: 100vw; }
 }

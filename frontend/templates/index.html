@@ -127,7 +127,10 @@
       </div>
       <div id="historico-detalhe-view" class="hidden">
         <button id="voltar-usinas" class="back-btn">&larr; Voltar às usinas</button>
-        <h2 id="usina-titulo"></h2>
+        <div class="usina-titulo-row">
+          <h2 id="usina-titulo"></h2>
+          <button id="abrir-chat-usina-btn" class="abrir-chat-usina-btn" title="Ver chat de todas as OS desta usina">Chat da usina ‹</button>
+        </div>
         <label class="filtro-checkbox-label filtro-checkbox-historico">
           <input type="checkbox" id="filtro-mostrar-canceladas-historico" />
           Mostrar canceladas
@@ -136,6 +139,16 @@
       </div>
     </section>
   </main>
+
+  <div id="chat-usina-overlay" class="chat-usina-overlay hidden"></div>
+  <aside id="chat-usina-panel" class="chat-usina-panel">
+    <div class="chat-usina-header">
+      <h3 id="chat-usina-titulo">Chat da usina</h3>
+      <button id="fechar-chat-usina-btn" class="modal-close">&times;</button>
+    </div>
+    <div id="chat-usina-status" class="status-line"></div>
+    <div id="chat-usina-lista" class="comentarios-lista chat-usina-lista"></div>
+  </aside>
 
   <div id="os-modal" class="modal hidden">
     <div class="modal-backdrop"></div>

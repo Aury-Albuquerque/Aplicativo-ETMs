@@ -5,6 +5,8 @@ const NOME_USUARIO_STORAGE_KEY = "etm_nome_usuario";
 // Compartilhado com o time (via GitHub) — lista real vem de /api/diagnosticos/opcoes,
 // isso aqui é só um valor inicial pra não travar a interface antes do fetch.
 const DIAGNOSTICO_OPCOES_PADRAO = ["Falha de Equipamento", "Falha de Comunicação", "Sujidade", "Outro"];
+// Idem, lista real vem de /api/status-pos-os/opcoes.
+const STATUS_POS_OS_OPCOES_PADRAO = ["Chamado de Garantia", "Alinhamento com o Cliente", "Regularizado"];
 
 const state = {
   usinas: [],
@@ -25,7 +27,9 @@ const state = {
   historicoAtual: [],
   modalFolioAtual: null,
   diagnosticoOpcoes: DIAGNOSTICO_OPCOES_PADRAO,
+  statusPosOsOpcoes: STATUS_POS_OS_OPCOES_PADRAO,
   tagOpcoes: TAG_OPCOES_PADRAO,
+  chatUsinaAberto: false,
 };
 
 // ---------------------------------------------------------------------
@@ -177,17 +181,25 @@ function diagnosticoBotaoHtml(os) {
   return `<button type="button" class="diagnostico-btn" data-folio="${os.folio}" title="Definir diagnóstico">${os.diagnostico ? "✎" : "+ diagnóstico"}</button>`;
 }
 
+function statusPosOsBadgeHtml(os) {
+  return os.status_pos_os ? `<span class="badge badge-status-pos-os">${os.status_pos_os}</span>` : "";
+}
+
+function statusPosOsBotaoHtml(os) {
+  return `<button type="button" class="status-pos-os-btn" data-folio="${os.folio}" title="Definir status pós-OS">${os.status_pos_os ? "✎" : "+ status pós-OS"}</button>`;
+}
+
 function renderCard(os, { comEtiquetas = false } = {}) {
   const div = document.createElement("div");
   div.className = "os-card";
   div.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${statusPosOsBadgeHtml(os)}</div>
     <div class="titulo">${os.titulo || "(sem título)"}</div>
     <div class="meta">
       <span>${os.usina}</span>
       <span>${formatarData(os.data_criacao)}</span>
     </div>
-    <div class="diagnostico-row">${diagnosticoBotaoHtml(os)}</div>
+    <div class="diagnostico-row">${diagnosticoBotaoHtml(os)} ${statusPosOsBotaoHtml(os)}</div>
     ${comEtiquetas ? renderTagsDoCard(os) : ""}
   `;
   div.addEventListener("click", (e) => {
@@ -199,6 +211,11 @@ function renderCard(os, { comEtiquetas = false } = {}) {
     if (e.target.closest(".diagnostico-btn")) {
       e.stopPropagation();
       abrirDiagnosticoPopover(e.target, os);
+      return;
+    }
+    if (e.target.closest(".status-pos-os-btn")) {
+      e.stopPropagation();
+      abrirStatusPosOsPopover(e.target, os);
       return;
     }
     abrirModal(os);
@@ -333,6 +350,67 @@ async function salvarDiagnostico(os, diagnostico) {
     if (state.modalFolioAtual === os.folio) abrirModal(os);
   } catch (err) {
     alert(`Não foi possível salvar o diagnóstico: ${err.message}`);
+  }
+}
+
+// ---------------------------------------------------------------------
+// Status pós-OS (etiqueta única por OS, compartilhada com o time via GitHub)
+// ---------------------------------------------------------------------
+function fecharStatusPosOsPopover() {
+  const existente = document.querySelector(".status-pos-os-popover");
+  if (existente) existente.remove();
+  document.removeEventListener("click", fecharStatusPosOsPopoverSeClicouFora, true);
+}
+
+function fecharStatusPosOsPopoverSeClicouFora(e) {
+  const popover = document.querySelector(".status-pos-os-popover");
+  if (popover && !popover.contains(e.target) && !e.target.classList.contains("status-pos-os-btn")) {
+    fecharStatusPosOsPopover();
+  }
+}
+
+function abrirStatusPosOsPopover(anchorEl, os) {
+  fecharStatusPosOsPopover();
+  const rect = anchorEl.getBoundingClientRect();
+  const popover = document.createElement("div");
+  popover.className = "tag-popover status-pos-os-popover";
+  popover.style.top = `${rect.bottom + 6}px`;
+  popover.style.left = `${Math.min(rect.left, window.innerWidth - 220)}px`;
+
+  const opcoesHtml = state.statusPosOsOpcoes
+    .map(
+      (op) => `
+      <label class="tag-popover-option">
+        <input type="radio" name="status-pos-os-radio" value="${op}" ${os.status_pos_os === op ? "checked" : ""} />
+        ${op}
+      </label>
+    `
+    )
+    .join("");
+  popover.innerHTML = `${opcoesHtml}<button type="button" class="diagnostico-limpar-btn">Remover status pós-OS</button>`;
+
+  popover.querySelectorAll("input[type=radio]").forEach((radio) => {
+    radio.addEventListener("change", () => salvarStatusPosOs(os, radio.value));
+  });
+  popover.querySelector(".diagnostico-limpar-btn").addEventListener("click", () => salvarStatusPosOs(os, null));
+
+  document.body.appendChild(popover);
+  setTimeout(() => document.addEventListener("click", fecharStatusPosOsPopoverSeClicouFora, true), 0);
+}
+
+async function salvarStatusPosOs(os, statusPosOs) {
+  try {
+    await fetchJson(`/api/os/${encodeURIComponent(os.folio)}/status-pos-os`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status_pos_os: statusPosOs }),
+    });
+    os.status_pos_os = statusPosOs;
+    fecharStatusPosOsPopover();
+    aplicarFiltrosERenderizar();
+    if (state.modalFolioAtual === os.folio) abrirModal(os);
+  } catch (err) {
+    alert(`Não foi possível salvar o status pós-OS: ${err.message}`);
   }
 }
 
@@ -663,7 +741,7 @@ function renderHistoryItem(os) {
   const div = document.createElement("div");
   div.className = "history-item";
   div.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${statusPosOsBadgeHtml(os)}</div>
     <div class="titulo">${os.titulo || "(sem título)"}</div>
     <div class="meta">${os.etm_codigo || ""} · criada em ${formatarData(os.data_criacao)}</div>
   `;
@@ -687,6 +765,7 @@ function renderHistoricoLista() {
 
 async function abrirHistoricoUsina(nomeUsina) {
   state.usinaAtual = nomeUsina;
+  fecharChatUsina();
   document.getElementById("historico-lista-view").classList.add("hidden");
   document.getElementById("historico-detalhe-view").classList.remove("hidden");
   document.getElementById("usina-titulo").textContent = nomeUsina;
@@ -704,6 +783,7 @@ async function abrirHistoricoUsina(nomeUsina) {
 function voltarParaUsinas() {
   document.getElementById("historico-detalhe-view").classList.add("hidden");
   document.getElementById("historico-lista-view").classList.remove("hidden");
+  fecharChatUsina();
 }
 
 // ---------------------------------------------------------------------
@@ -713,7 +793,7 @@ function abrirModal(os) {
   const modal = document.getElementById("os-modal");
   const content = document.getElementById("modal-content");
   content.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${diagnosticoBotaoHtml(os)}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${diagnosticoBotaoHtml(os)} ${statusPosOsBadgeHtml(os)} ${statusPosOsBotaoHtml(os)}</div>
     <h3>${os.titulo || "(sem título)"}</h3>
     <dl>
       <dt>Usina</dt><dd>${os.usina}</dd>
@@ -748,6 +828,13 @@ function abrirModal(os) {
     diagBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       abrirDiagnosticoPopover(diagBtn, os);
+    });
+  }
+  const statusBtn = content.querySelector(".status-pos-os-btn");
+  if (statusBtn) {
+    statusBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      abrirStatusPosOsPopover(statusBtn, os);
     });
   }
 
@@ -802,6 +889,62 @@ function atualizarEstadoInputComentario() {
   document.getElementById("comentario-aviso-nome").classList.toggle("hidden", temNome);
   document.getElementById("comentario-enviar-btn").disabled = !temNome;
   document.getElementById("comentario-texto").disabled = !temNome;
+}
+
+// ---------------------------------------------------------------------
+// Chat consolidado da usina (todas as OS, painel deslizante no Histórico)
+// ---------------------------------------------------------------------
+function renderComentarioComOs(c) {
+  const div = document.createElement("div");
+  div.className = "comentario-item";
+  div.innerHTML = `
+    <span class="comentario-os-ref" data-folio="${c.folio}" title="${escapeHtml(c.titulo_os || "")}">OS ${c.folio}</span>
+    <div class="comentario-cabecalho">
+      <span class="comentario-autor">${escapeHtml(c.autor)}</span>
+      <span class="comentario-data">${formatarDataHora(c.data)}</span>
+    </div>
+    <div class="comentario-texto">${escapeHtml(c.texto)}</div>
+  `;
+  div.querySelector(".comentario-os-ref").addEventListener("click", () => {
+    const os = state.historicoAtual.find((o) => String(o.folio) === String(c.folio));
+    if (os) abrirModal(os);
+  });
+  return div;
+}
+
+async function carregarChatUsina(nomeUsina) {
+  const lista = document.getElementById("chat-usina-lista");
+  const status = document.getElementById("chat-usina-status");
+  document.getElementById("chat-usina-titulo").textContent = `Chat · ${nomeUsina}`;
+  status.textContent = "Carregando comentários...";
+  status.classList.remove("error");
+  lista.innerHTML = "";
+  try {
+    const comentarios = await fetchJson(`/api/usinas/${encodeURIComponent(nomeUsina)}/chat`);
+    if (state.usinaAtual !== nomeUsina) return;
+    if (comentarios.length === 0) {
+      status.textContent = "Nenhum comentário em nenhuma OS desta usina ainda.";
+      return;
+    }
+    status.textContent = `${comentarios.length} comentário${comentarios.length !== 1 ? "s" : ""} nesta usina`;
+    comentarios.forEach((c) => lista.appendChild(renderComentarioComOs(c)));
+  } catch (err) {
+    status.textContent = `Erro ao carregar chat: ${err.message}`;
+    status.classList.add("error");
+  }
+}
+
+function abrirChatUsina() {
+  state.chatUsinaAberto = true;
+  document.getElementById("chat-usina-overlay").classList.remove("hidden");
+  document.getElementById("chat-usina-panel").classList.add("aberto");
+  carregarChatUsina(state.usinaAtual);
+}
+
+function fecharChatUsina() {
+  state.chatUsinaAberto = false;
+  document.getElementById("chat-usina-overlay").classList.add("hidden");
+  document.getElementById("chat-usina-panel").classList.remove("aberto");
 }
 
 async function enviarComentario() {
@@ -911,6 +1054,13 @@ function init() {
     .catch(() => {
       /* mantém TAG_OPCOES_PADRAO se a busca falhar */
     });
+  fetchJson("/api/status-pos-os/opcoes")
+    .then((opcoes) => {
+      state.statusPosOsOpcoes = opcoes;
+    })
+    .catch(() => {
+      /* mantém STATUS_POS_OS_OPCOES_PADRAO se a busca falhar */
+    });
 
   document.getElementById("refresh-btn").addEventListener("click", async (e) => {
     e.target.disabled = true;
@@ -932,6 +1082,9 @@ function init() {
     state.mostrarCanceladasHistorico = e.target.checked;
     renderHistoricoLista();
   });
+  document.getElementById("abrir-chat-usina-btn").addEventListener("click", abrirChatUsina);
+  document.getElementById("fechar-chat-usina-btn").addEventListener("click", fecharChatUsina);
+  document.getElementById("chat-usina-overlay").addEventListener("click", fecharChatUsina);
   document.getElementById("modal-close").addEventListener("click", fecharModal);
   document.querySelector(".modal-backdrop").addEventListener("click", fecharModal);
   document.getElementById("comentario-enviar-btn").addEventListener("click", enviarComentario);

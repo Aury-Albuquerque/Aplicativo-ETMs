@@ -1,4 +1,4 @@
-"""Comentários, diagnósticos e etiquetas compartilhados por OS.
+"""Comentários, diagnósticos, status pós-OS e etiquetas compartilhados por OS.
 
 Como o app não tem um servidor central (cada pessoa roda sua própria
 instância localmente), guardamos tudo isso no GitHub: cada OS vira uma Issue
@@ -6,11 +6,14 @@ no repositório privado (título "OS {folio}"):
 - Cada comentário da pessoa vira um comentário daquela Issue.
 - O diagnóstico (Falha de Equipamento / Falha de Comunicação / Sujidade /
   Outro) vira uma "label" da própria Issue — só uma por vez.
+- O status pós-OS (Chamado de Garantia / Alinhamento com o Cliente /
+  Regularizado) também vira uma label única, independente do diagnóstico.
 - As etiquetas locais (OS em campo / Stand By / Validação Final) também
   viram labels da Issue — várias podem estar ativas ao mesmo tempo.
 
 Assim, qualquer pessoa que abrir a mesma OS em qualquer PC do time vê os
-mesmos comentários, o mesmo diagnóstico e as mesmas etiquetas.
+mesmos comentários, o mesmo diagnóstico, o mesmo status pós-OS e as mesmas
+etiquetas.
 
 O nome de quem escreveu um comentário fica embutido no início do corpo dele
 (o GitHub sempre atribui a autoria ao dono do token, não a quem digitou no
@@ -39,6 +42,9 @@ _COMMENT_PATTERN = re.compile(r"^\*\*(?P<autor>.+?):\*\*\n(?P<texto>[\s\S]*)$")
 
 DIAGNOSTIC_OPTIONS = ["Falha de Equipamento", "Falha de Comunicação", "Sujidade", "Outro"]
 _DIAGNOSTIC_SET = set(DIAGNOSTIC_OPTIONS)
+
+STATUS_POS_OS_OPTIONS = ["Chamado de Garantia", "Alinhamento com o Cliente", "Regularizado"]
+_STATUS_POS_OS_SET = set(STATUS_POS_OS_OPTIONS)
 
 TAG_OPTIONS = ["OS em campo", "Stand By", "Validação Final"]
 _TAG_SET = set(TAG_OPTIONS)
@@ -159,42 +165,56 @@ class CommentsClient:
         resp.raise_for_status()
         return self._parse_comment(resp.json())
 
-    # ------------------------------------------------------------------
-    # Diagnóstico (label única por OS) e Etiquetas (múltiplas por OS)
-    # ------------------------------------------------------------------
-    def get_diagnosticos_mapping(self) -> dict[str, str]:
-        """folio -> diagnóstico, só para as OS que já têm um definido."""
+    def get_comments_for_folios(self, folios: list[str]) -> list[dict[str, Any]]:
+        """Todos os comentários das OS informadas, cada um marcado com seu
+        folio — usado pelo chat consolidado da usina, no Histórico.
+        """
         self._refresh_issue_cache()
-        resultado: dict[str, str] = {}
-        for folio, info in self._issue_cache.items():
-            diagnostico = next((lb for lb in info["labels"] if lb in _DIAGNOSTIC_SET), None)
-            if diagnostico:
-                resultado[folio] = diagnostico
+        resultado: list[dict[str, Any]] = []
+        for folio in folios:
+            folio = str(folio)
+            info = self._issue_cache.get(folio)
+            if info is None:
+                continue
+            resp = self._session.get(
+                self._api_url(f"/issues/{info['number']}/comments"),
+                headers=_HEADERS,
+                params={"per_page": 100},
+                timeout=20,
+            )
+            resp.raise_for_status()
+            for raw in resp.json():
+                comentario = self._parse_comment(raw)
+                comentario["folio"] = folio
+                resultado.append(comentario)
+        resultado.sort(key=lambda c: c.get("data") or "")
         return resultado
 
-    def get_tags_mapping(self) -> dict[str, list[str]]:
-        """folio -> lista de etiquetas locais ativas."""
-        self._refresh_issue_cache()
-        resultado: dict[str, list[str]] = {}
-        for folio, info in self._issue_cache.items():
-            tags = [lb for lb in info["labels"] if lb in _TAG_SET]
-            if tags:
-                resultado[folio] = tags
-        return resultado
-
-    def get_diagnosticos_e_tags(self) -> tuple[dict[str, str], dict[str, list[str]]]:
-        """Busca os dois de uma vez só (uma única atualização de cache)."""
+    # ------------------------------------------------------------------
+    # Diagnóstico / Status pós-OS (uma label cada, por OS) e Etiquetas
+    # (várias labels por OS) — todas guardadas como labels da Issue.
+    # ------------------------------------------------------------------
+    def get_all_label_mappings(
+        self,
+    ) -> tuple[dict[str, str], dict[str, str], dict[str, list[str]]]:
+        """Busca diagnóstico, status pós-OS e etiquetas de uma vez só (uma
+        única atualização de cache). folio -> valor em cada um dos três.
+        """
         self._refresh_issue_cache()
         diagnosticos: dict[str, str] = {}
+        status_pos_os: dict[str, str] = {}
         tags: dict[str, list[str]] = {}
         for folio, info in self._issue_cache.items():
             diagnostico = next((lb for lb in info["labels"] if lb in _DIAGNOSTIC_SET), None)
             if diagnostico:
                 diagnosticos[folio] = diagnostico
+            status = next((lb for lb in info["labels"] if lb in _STATUS_POS_OS_SET), None)
+            if status:
+                status_pos_os[folio] = status
             os_tags = [lb for lb in info["labels"] if lb in _TAG_SET]
             if os_tags:
                 tags[folio] = os_tags
-        return diagnosticos, tags
+        return diagnosticos, status_pos_os, tags
 
     def _add_label(self, number: int, label: str) -> None:
         resp = self._session.post(
@@ -215,25 +235,35 @@ class CommentsClient:
         if resp.status_code not in (200, 404):
             resp.raise_for_status()
 
-    def set_diagnostico(self, folio: str, diagnostico: str | None) -> None:
+    def _set_single_label(self, folio: str, novo_valor: str | None, categoria: set[str]) -> None:
+        """Garante no máximo uma label da `categoria` ativa na OS por vez —
+        usado tanto pro diagnóstico quanto pro status pós-OS.
+        """
         folio = str(folio)
-        if diagnostico is not None and diagnostico not in _DIAGNOSTIC_SET:
-            raise ValueError(f"Diagnóstico inválido: {diagnostico!r}")
+        if novo_valor is not None and novo_valor not in categoria:
+            raise ValueError(f"Valor inválido: {novo_valor!r}")
 
         info = self._get_or_create_issue(folio)
         number = info["number"]
-        diagnostico_atual = next((lb for lb in info["labels"] if lb in _DIAGNOSTIC_SET), None)
+        valor_atual = next((lb for lb in info["labels"] if lb in categoria), None)
 
-        if diagnostico_atual and diagnostico_atual != diagnostico:
-            self._remove_label(number, diagnostico_atual)
-        if diagnostico and diagnostico != diagnostico_atual:
-            self._add_label(number, diagnostico)
+        if valor_atual and valor_atual != novo_valor:
+            self._remove_label(number, valor_atual)
+        if novo_valor and novo_valor != valor_atual:
+            self._add_label(number, novo_valor)
 
         with self._lock:
             labels = self._issue_cache[folio]["labels"]
-            labels.discard(diagnostico_atual) if diagnostico_atual else None
-            if diagnostico:
-                labels.add(diagnostico)
+            if valor_atual:
+                labels.discard(valor_atual)
+            if novo_valor:
+                labels.add(novo_valor)
+
+    def set_diagnostico(self, folio: str, diagnostico: str | None) -> None:
+        self._set_single_label(folio, diagnostico, _DIAGNOSTIC_SET)
+
+    def set_status_pos_os(self, folio: str, status: str | None) -> None:
+        self._set_single_label(folio, status, _STATUS_POS_OS_SET)
 
     def toggle_tag(self, folio: str, tag: str) -> list[str]:
         """Ativa/desativa uma etiqueta local na OS. Retorna a lista atualizada."""

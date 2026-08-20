@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import config, updater
-from .comments import DIAGNOSTIC_OPTIONS, TAG_OPTIONS, comments_client
+from .comments import DIAGNOSTIC_OPTIONS, STATUS_POS_OS_OPTIONS, TAG_OPTIONS, comments_client
 from .fracttal_client import extract_cliente, fracttal_client
 
 # Quando empacotado com PyInstaller (--onefile), os arquivos de dados (o
@@ -152,15 +152,15 @@ def _build_id_to_folio(raw_orders: list[dict[str, Any]]) -> dict[int, str]:
     }
 
 
-def _safe_diagnosticos_e_tags() -> tuple[dict[str, str], dict[str, list[str]]]:
-    # Diagnóstico e etiquetas são "extras" guardados no GitHub — se estiver
-    # fora do ar por algum motivo, isso não pode derrubar o Planner/Histórico
-    # inteiro (o app continua funcionando, só sem esses dois detalhes).
+def _safe_label_mappings() -> tuple[dict[str, str], dict[str, str], dict[str, list[str]]]:
+    # Diagnóstico, status pós-OS e etiquetas são "extras" guardados no GitHub
+    # — se estiver fora do ar por algum motivo, isso não pode derrubar o
+    # Planner/Histórico inteiro (o app continua funcionando, só sem eles).
     try:
-        return comments_client.get_diagnosticos_e_tags()
+        return comments_client.get_all_label_mappings()
     except Exception as exc:  # noqa: BLE001
-        print(f"[main] Falha ao buscar diagnósticos/etiquetas: {exc}")
-        return {}, {}
+        print(f"[main] Falha ao buscar diagnósticos/status/etiquetas: {exc}")
+        return {}, {}, {}
 
 
 # ----------------------------------------------------------------------
@@ -174,7 +174,7 @@ def get_planner(refresh: bool = False) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"Erro ao consultar Fracttal: {exc}") from exc
 
     id_to_folio = _build_id_to_folio(raw_orders)
-    diagnosticos, tags = _safe_diagnosticos_e_tags()
+    diagnosticos, status_pos_os, tags = _safe_label_mappings()
     columns: dict[str, list[dict[str, Any]]] = {
         "nao_iniciada": [],
         "em_andamento": [],
@@ -184,6 +184,7 @@ def get_planner(refresh: bool = False) -> dict[str, Any]:
     for raw in raw_orders:
         os_norm = _normalize_os(raw, id_to_folio)
         os_norm["diagnostico"] = diagnosticos.get(str(os_norm["folio"]))
+        os_norm["status_pos_os"] = status_pos_os.get(str(os_norm["folio"]))
         os_norm["etiquetas"] = tags.get(str(os_norm["folio"]), [])
         # OS cancelada não é trabalho ativo nem pendente — fica escondida por
         # padrão no Planner, mas o front pode optar por mostrá-la (filtro).
@@ -218,17 +219,46 @@ def get_historico_usina(usina: str, refresh: bool = False) -> list[dict[str, Any
         raise HTTPException(status_code=502, detail=f"Erro ao consultar Fracttal: {exc}") from exc
 
     id_to_folio = _build_id_to_folio(raw_orders)
-    diagnosticos, tags = _safe_diagnosticos_e_tags()
+    diagnosticos, status_pos_os, tags = _safe_label_mappings()
     historico = []
     for raw in raw_orders:
         if (raw.get("groups_1_description") or "Usina não identificada") != usina:
             continue
         os_norm = _normalize_os(raw, id_to_folio)
         os_norm["diagnostico"] = diagnosticos.get(str(os_norm["folio"]))
+        os_norm["status_pos_os"] = status_pos_os.get(str(os_norm["folio"]))
         os_norm["etiquetas"] = tags.get(str(os_norm["folio"]), [])
         historico.append(os_norm)
     historico.sort(key=lambda o: o.get("data_criacao") or "", reverse=True)
     return historico
+
+
+@app.get("/api/usinas/{usina}/chat")
+def get_chat_usina(usina: str, refresh: bool = False) -> list[dict[str, Any]]:
+    """Todos os comentários de todas as OS dessa usina, num só feed — usado
+    pelo painel de chat consolidado que desliza da direita no Histórico.
+    """
+    try:
+        raw_orders = fracttal_client.get_relevant_work_orders(force_refresh=refresh)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Erro ao consultar Fracttal: {exc}") from exc
+
+    folio_titulo: dict[str, str] = {}
+    for raw in raw_orders:
+        if (raw.get("groups_1_description") or "Usina não identificada") != usina:
+            continue
+        folio = raw.get("wo_folio")
+        if folio:
+            folio_titulo[str(folio)] = raw.get("description") or ""
+
+    try:
+        comentarios = comments_client.get_comments_for_folios(list(folio_titulo.keys()))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Erro ao carregar comentários: {exc}") from exc
+
+    for c in comentarios:
+        c["titulo_os"] = folio_titulo.get(c["folio"])
+    return comentarios
 
 
 # ----------------------------------------------------------------------
@@ -280,6 +310,29 @@ def definir_diagnostico(folio: str, corpo: DiagnosticoIn) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Erro ao salvar diagnóstico: {exc}") from exc
     return {"folio": folio, "diagnostico": corpo.diagnostico}
+
+
+# ----------------------------------------------------------------------
+# Status pós-OS (etiqueta única por OS, compartilhada com o time)
+# ----------------------------------------------------------------------
+class StatusPosOsIn(BaseModel):
+    status_pos_os: str | None = None
+
+
+@app.get("/api/status-pos-os/opcoes")
+def opcoes_status_pos_os() -> list[str]:
+    return STATUS_POS_OS_OPTIONS
+
+
+@app.post("/api/os/{folio}/status-pos-os")
+def definir_status_pos_os(folio: str, corpo: StatusPosOsIn) -> dict[str, Any]:
+    try:
+        comments_client.set_status_pos_os(folio, corpo.status_pos_os)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Erro ao salvar status pós-OS: {exc}") from exc
+    return {"folio": folio, "status_pos_os": corpo.status_pos_os}
 
 
 # ----------------------------------------------------------------------
