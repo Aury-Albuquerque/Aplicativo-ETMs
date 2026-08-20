@@ -17,8 +17,12 @@ const state = {
     usina: "",
     criadoPor: "",
     responsavel: "",
+    tiposTrabalho: new Set(["analise", "campo"]),
   },
   tagsSelecionadas: new Set(),
+  mostrarCanceladasPlanner: false,
+  mostrarCanceladasHistorico: false,
+  historicoAtual: [],
   modalFolioAtual: null,
   diagnosticoOpcoes: DIAGNOSTICO_OPCOES_PADRAO,
   tagOpcoes: TAG_OPCOES_PADRAO,
@@ -363,6 +367,8 @@ function passaFiltrosGerais(os) {
   if (f.usina && !os.usina.toLowerCase().includes(f.usina.toLowerCase())) return false;
   if (f.criadoPor && (os.criado_por || "").trim() !== f.criadoPor) return false;
   if (f.responsavel && (os.tecnico || "").trim() !== f.responsavel) return false;
+  const tipoAtual = os.em_analise ? "analise" : "campo";
+  if (!f.tiposTrabalho.has(tipoAtual)) return false;
   return true;
 }
 
@@ -475,14 +481,42 @@ function initFiltros() {
     },
   });
 
+  document.querySelectorAll("#tab-planner .filtro-chips-inline .tag-chip[data-tipo]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const tipo = chip.dataset.tipo;
+      if (state.filtros.tiposTrabalho.has(tipo)) {
+        // Não deixa desmarcar os dois ao mesmo tempo (senão nada aparece
+        // e não fica óbvio o motivo) — pelo menos um sempre fica ativo.
+        if (state.filtros.tiposTrabalho.size === 1) return;
+        state.filtros.tiposTrabalho.delete(tipo);
+      } else {
+        state.filtros.tiposTrabalho.add(tipo);
+      }
+      chip.classList.toggle("selected");
+      aplicarFiltrosERenderizar();
+    });
+  });
+
+  document.getElementById("filtro-mostrar-canceladas-planner").addEventListener("change", (e) => {
+    state.mostrarCanceladasPlanner = e.target.checked;
+    aplicarFiltrosERenderizar();
+  });
+
   document.getElementById("filtro-limpar").addEventListener("click", () => {
-    state.filtros = { cliente: "", usina: "", criadoPor: "", responsavel: "" };
+    state.filtros = {
+      cliente: "",
+      usina: "",
+      criadoPor: "",
+      responsavel: "",
+      tiposTrabalho: new Set(["analise", "campo"]),
+    };
     state.tagsSelecionadas.clear();
     selectCliente.value = "";
     inputUsina.value = "";
     document.getElementById("filtro-criador-input").value = "";
     document.getElementById("filtro-responsavel-input").value = "";
-    document.querySelectorAll(".tag-chip.selected").forEach((c) => c.classList.remove("selected"));
+    document.getElementById("tag-filtro-row").querySelectorAll(".tag-chip.selected").forEach((c) => c.classList.remove("selected"));
+    document.querySelectorAll("#tab-planner .filtro-chips-inline .tag-chip").forEach((c) => c.classList.add("selected"));
     aplicarFiltrosERenderizar();
   });
 }
@@ -498,6 +532,13 @@ function aplicarFiltrosERenderizar() {
   renderColumn("col-nao-iniciada", "count-nao-iniciada", naoIniciadas);
   renderColumn("col-em-andamento", "count-em-andamento", emAndamento, { comEtiquetas: true });
   renderColumn("col-finalizada", "count-finalizada", finalizadas);
+
+  const colunaCanceladas = document.getElementById("coluna-canceladas");
+  colunaCanceladas.classList.toggle("hidden", !state.mostrarCanceladasPlanner);
+  if (state.mostrarCanceladasPlanner) {
+    const canceladas = (data.canceladas || []).filter(passaFiltrosGerais);
+    renderColumn("col-cancelada", "count-cancelada", canceladas);
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -630,6 +671,20 @@ function renderHistoryItem(os) {
   return div;
 }
 
+function renderHistoricoLista() {
+  const lista = document.getElementById("usina-historico-lista");
+  const visiveis = state.mostrarCanceladasHistorico
+    ? state.historicoAtual
+    : state.historicoAtual.filter((os) => os.status_bucket !== "cancelada");
+
+  lista.innerHTML = "";
+  if (visiveis.length === 0) {
+    lista.innerHTML = `<div class="empty-msg">Nenhuma OS corretiva encontrada para esta usina</div>`;
+    return;
+  }
+  visiveis.forEach((os) => lista.appendChild(renderHistoryItem(os)));
+}
+
 async function abrirHistoricoUsina(nomeUsina) {
   state.usinaAtual = nomeUsina;
   document.getElementById("historico-lista-view").classList.add("hidden");
@@ -639,13 +694,8 @@ async function abrirHistoricoUsina(nomeUsina) {
   lista.innerHTML = `<div class="empty-msg">Carregando histórico...</div>`;
 
   try {
-    const historico = await fetchJson(`/api/usinas/${encodeURIComponent(nomeUsina)}/historico`);
-    lista.innerHTML = "";
-    if (historico.length === 0) {
-      lista.innerHTML = `<div class="empty-msg">Nenhuma OS corretiva encontrada para esta usina</div>`;
-      return;
-    }
-    historico.forEach((os) => lista.appendChild(renderHistoryItem(os)));
+    state.historicoAtual = await fetchJson(`/api/usinas/${encodeURIComponent(nomeUsina)}/historico`);
+    renderHistoricoLista();
   } catch (err) {
     lista.innerHTML = `<div class="empty-msg">Erro ao carregar histórico: ${err.message}</div>`;
   }
@@ -877,6 +927,10 @@ function init() {
   document.getElementById("voltar-usinas").addEventListener("click", voltarParaUsinas);
   document.getElementById("filtro-usina-historico").addEventListener("input", (e) => {
     renderUsinasGrid(e.target.value);
+  });
+  document.getElementById("filtro-mostrar-canceladas-historico").addEventListener("change", (e) => {
+    state.mostrarCanceladasHistorico = e.target.checked;
+    renderHistoricoLista();
   });
   document.getElementById("modal-close").addEventListener("click", fecharModal);
   document.querySelector(".modal-backdrop").addEventListener("click", fecharModal);

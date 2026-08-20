@@ -60,6 +60,19 @@
           <input id="filtro-responsavel-input" type="text" placeholder="Todos" autocomplete="off" />
           <div id="filtro-responsavel-dropdown" class="combobox-dropdown hidden"></div>
         </div>
+        <div class="filtro-item">
+          <label>Tipo de trabalho</label>
+          <div class="filtro-chips-inline">
+            <button type="button" class="tag-chip selected" data-tipo="analise">Análise de Engenharia</button>
+            <button type="button" class="tag-chip selected" data-tipo="campo">Campo</button>
+          </div>
+        </div>
+        <div class="filtro-item filtro-checkbox-item">
+          <label class="filtro-checkbox-label">
+            <input type="checkbox" id="filtro-mostrar-canceladas-planner" />
+            Mostrar canceladas
+          </label>
+        </div>
         <button id="filtro-limpar" class="filtro-limpar-btn">Limpar filtros</button>
       </div>
 
@@ -89,6 +102,14 @@
           </h2>
           <div id="col-finalizada" class="card-list"></div>
         </div>
+        <div class="column hidden" id="coluna-canceladas">
+          <h2 class="column-title col-cancelada">
+            <button class="collapse-btn" data-target="col-cancelada" aria-expanded="true">▾</button>
+            <span>Canceladas</span>
+            <span id="count-cancelada" class="count"></span>
+          </h2>
+          <div id="col-cancelada" class="card-list"></div>
+        </div>
       </div>
     </section>
 
@@ -107,6 +128,10 @@
       <div id="historico-detalhe-view" class="hidden">
         <button id="voltar-usinas" class="back-btn">&larr; Voltar às usinas</button>
         <h2 id="usina-titulo"></h2>
+        <label class="filtro-checkbox-label filtro-checkbox-historico">
+          <input type="checkbox" id="filtro-mostrar-canceladas-historico" />
+          Mostrar canceladas
+        </label>
         <div id="usina-historico-lista" class="history-list"></div>
       </div>
     </section>

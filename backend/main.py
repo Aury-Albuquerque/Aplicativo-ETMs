@@ -179,26 +179,25 @@ def get_planner(refresh: bool = False) -> dict[str, Any]:
         "nao_iniciada": [],
         "em_andamento": [],
         "finalizada": [],
+        "cancelada": [],
     }
     for raw in raw_orders:
         os_norm = _normalize_os(raw, id_to_folio)
         os_norm["diagnostico"] = diagnosticos.get(str(os_norm["folio"]))
         os_norm["etiquetas"] = tags.get(str(os_norm["folio"]), [])
-        bucket = os_norm["status_bucket"]
-        if bucket == "cancelada":
-            # OS cancelada não é trabalho ativo nem pendente — fica de fora
-            # do Planner (mas continua aparecendo no Histórico da usina).
-            continue
-        columns[bucket].append(os_norm)
+        # OS cancelada não é trabalho ativo nem pendente — fica escondida por
+        # padrão no Planner, mas o front pode optar por mostrá-la (filtro).
+        columns[os_norm["status_bucket"]].append(os_norm)
 
     for bucket in columns.values():
         bucket.sort(key=lambda o: o.get("data_criacao") or "", reverse=True)
 
-    total = sum(len(b) for b in columns.values())
+    total = len(columns["nao_iniciada"]) + len(columns["em_andamento"]) + len(columns["finalizada"])
     return {
         "nao_iniciadas": columns["nao_iniciada"],
         "em_andamento": columns["em_andamento"],
         "finalizadas": columns["finalizada"],
+        "canceladas": columns["cancelada"],
         "total": total,
     }
 
