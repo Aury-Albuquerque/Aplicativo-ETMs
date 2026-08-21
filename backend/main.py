@@ -28,13 +28,17 @@ app = FastAPI(title="ETM Grid Co.")
 
 @app.middleware("http")
 async def no_cache_estaticos(request, call_next):
-    """Evita que o navegador guarde em cache uma versão antiga do app.js /
-    style.css entre atualizações do app — sem isso, alguém que atualiza o
-    executável mas mantém a mesma aba aberta pode acabar rodando JS velho
-    contra o backend novo (e vice-versa), causando erros difíceis de explicar.
+    """Evita que o navegador guarde em cache uma versão antiga do index.html /
+    app.js / style.css entre atualizações do app — sem isso, alguém que
+    atualiza o executável mas abre uma aba "nova" (que ainda reaproveita o
+    cache HTTP de antes) pode acabar com um HTML velho carregando um JS novo
+    (ou vice-versa). Um descompasso desses é pior que parecer: o JS novo tenta
+    grudar listeners em elementos que só existem no HTML novo, dá erro e trava
+    a inicialização inteira — o app fica parado sem nenhuma mensagem de erro
+    visível. Por isso isso cobre tanto "/" (o index.html) quanto "/static".
     """
     response = await call_next(request)
-    if request.url.path.startswith("/static"):
+    if request.url.path == "/" or request.url.path.startswith("/static"):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return response
 

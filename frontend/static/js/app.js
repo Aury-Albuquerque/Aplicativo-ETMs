@@ -1453,4 +1453,20 @@ function init() {
   checarAtualizacao();
 }
 
-document.addEventListener("DOMContentLoaded", init);
+document.addEventListener("DOMContentLoaded", () => {
+  try {
+    init();
+  } catch (err) {
+    // Se algo no init() falhar (ex: HTML e JS de versões diferentes, por
+    // causa de cache do navegador), antes o app ficava travado sem nenhuma
+    // mensagem — parecia só "lento". Agora pelo menos avisa e sugere o que
+    // fazer, em vez de ficar parado em silêncio.
+    console.error("Falha ao iniciar o app:", err);
+    const statusEl = document.getElementById("planner-status");
+    if (statusEl) {
+      statusEl.textContent =
+        "Erro ao iniciar a página. Feche esta aba e abra o app de novo (ou aperte Ctrl+F5).";
+      statusEl.classList.add("error");
+    }
+  }
+});
