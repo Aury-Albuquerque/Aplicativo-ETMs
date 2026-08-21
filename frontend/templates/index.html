@@ -68,6 +68,14 @@
             <button type="button" class="tag-chip selected" data-tipo="campo">Campo</button>
           </div>
         </div>
+        <div class="filtro-item filtro-item-data">
+          <label>Período (OS ativa entre)</label>
+          <div class="filtro-data-row">
+            <input type="date" id="filtro-data-inicio" />
+            <span>até</span>
+            <input type="date" id="filtro-data-fim" />
+          </div>
+        </div>
         <div class="filtro-item filtro-checkbox-item">
           <label class="filtro-checkbox-label">
             <input type="checkbox" id="filtro-mostrar-canceladas-planner" />
@@ -132,6 +140,12 @@
           <h2 id="usina-titulo"></h2>
           <button id="abrir-chat-usina-btn" class="abrir-chat-usina-btn" title="Ver chat de todas as OS desta usina">Chat da usina ‹</button>
         </div>
+        <div class="filtro-data-row filtro-data-row-historico">
+          <label>Período (OS ativa entre)</label>
+          <input type="date" id="historico-filtro-data-inicio" />
+          <span>até</span>
+          <input type="date" id="historico-filtro-data-fim" />
+        </div>
         <label class="filtro-checkbox-label filtro-checkbox-historico">
           <input type="checkbox" id="filtro-mostrar-canceladas-historico" />
           Mostrar canceladas
@@ -164,10 +178,22 @@
               <button type="button" class="tag-chip selected" data-tipo-abertas="campo">Campo</button>
             </div>
           </div>
+          <div class="filtro-item filtro-item-data">
+            <label>Período (OS ativa entre)</label>
+            <div class="filtro-data-row">
+              <input type="date" id="eea-filtro-data-inicio" />
+              <span>até</span>
+              <input type="date" id="eea-filtro-data-fim" />
+            </div>
+          </div>
           <button id="eea-filtro-limpar" class="filtro-limpar-btn">Limpar filtros</button>
         </div>
 
+        <h3 class="eea-subsecao-titulo">Estações em Aberto</h3>
         <div id="eea-usinas-grid" class="usinas-grid"></div>
+
+        <h3 class="eea-subsecao-titulo eea-subsecao-titulo-acompanhamento">Estações em Acompanhamento</h3>
+        <div id="eea-acompanhamento-grid" class="usinas-grid"></div>
       </div>
 
       <div id="eea-detalhe-view" class="hidden">

@@ -152,15 +152,16 @@ def _build_id_to_folio(raw_orders: list[dict[str, Any]]) -> dict[int, str]:
     }
 
 
-def _safe_label_mappings() -> tuple[dict[str, str], dict[str, str], dict[str, list[str]]]:
-    # Diagnóstico, status pós-OS e etiquetas são "extras" guardados no GitHub
-    # — se estiver fora do ar por algum motivo, isso não pode derrubar o
-    # Planner/Histórico inteiro (o app continua funcionando, só sem eles).
+def _safe_label_mappings() -> tuple[dict[str, str], dict[str, str], dict[str, list[str]], dict[str, bool]]:
+    # Diagnóstico, status pós-OS, etiquetas e acompanhamento são "extras"
+    # guardados no GitHub — se estiver fora do ar por algum motivo, isso não
+    # pode derrubar o Planner/Histórico inteiro (o app continua funcionando,
+    # só sem eles).
     try:
         return comments_client.get_all_label_mappings()
     except Exception as exc:  # noqa: BLE001
-        print(f"[main] Falha ao buscar diagnósticos/status/etiquetas: {exc}")
-        return {}, {}, {}
+        print(f"[main] Falha ao buscar diagnósticos/status/etiquetas/acompanhamento: {exc}")
+        return {}, {}, {}, {}
 
 
 # ----------------------------------------------------------------------
@@ -174,7 +175,7 @@ def get_planner(refresh: bool = False) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"Erro ao consultar Fracttal: {exc}") from exc
 
     id_to_folio = _build_id_to_folio(raw_orders)
-    diagnosticos, status_pos_os, tags = _safe_label_mappings()
+    diagnosticos, status_pos_os, tags, acompanhamento = _safe_label_mappings()
     columns: dict[str, list[dict[str, Any]]] = {
         "nao_iniciada": [],
         "em_andamento": [],
@@ -186,6 +187,7 @@ def get_planner(refresh: bool = False) -> dict[str, Any]:
         os_norm["diagnostico"] = diagnosticos.get(str(os_norm["folio"]))
         os_norm["status_pos_os"] = status_pos_os.get(str(os_norm["folio"]))
         os_norm["etiquetas"] = tags.get(str(os_norm["folio"]), [])
+        os_norm["em_acompanhamento"] = acompanhamento.get(str(os_norm["folio"]), False)
         # OS cancelada não é trabalho ativo nem pendente — fica escondida por
         # padrão no Planner, mas o front pode optar por mostrá-la (filtro).
         columns[os_norm["status_bucket"]].append(os_norm)
@@ -219,7 +221,7 @@ def get_historico_usina(usina: str, refresh: bool = False) -> list[dict[str, Any
         raise HTTPException(status_code=502, detail=f"Erro ao consultar Fracttal: {exc}") from exc
 
     id_to_folio = _build_id_to_folio(raw_orders)
-    diagnosticos, status_pos_os, tags = _safe_label_mappings()
+    diagnosticos, status_pos_os, tags, acompanhamento = _safe_label_mappings()
     historico = []
     for raw in raw_orders:
         if (raw.get("groups_1_description") or "Usina não identificada") != usina:
@@ -228,6 +230,7 @@ def get_historico_usina(usina: str, refresh: bool = False) -> list[dict[str, Any
         os_norm["diagnostico"] = diagnosticos.get(str(os_norm["folio"]))
         os_norm["status_pos_os"] = status_pos_os.get(str(os_norm["folio"]))
         os_norm["etiquetas"] = tags.get(str(os_norm["folio"]), [])
+        os_norm["em_acompanhamento"] = acompanhamento.get(str(os_norm["folio"]), False)
         historico.append(os_norm)
     historico.sort(key=lambda o: o.get("data_criacao") or "", reverse=True)
     return historico
@@ -356,6 +359,23 @@ def alternar_tag(folio: str, corpo: TagToggleIn) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Erro ao salvar etiqueta: {exc}") from exc
     return {"folio": folio, "etiquetas": etiquetas}
+
+
+# ----------------------------------------------------------------------
+# Em Acompanhamento (marcador único por OS, independente de status —
+# permite continuar de olho numa OS mesmo depois de finalizada no Fracttal)
+# ----------------------------------------------------------------------
+class AcompanhamentoIn(BaseModel):
+    ativo: bool
+
+
+@app.post("/api/os/{folio}/acompanhamento")
+def definir_acompanhamento(folio: str, corpo: AcompanhamentoIn) -> dict[str, Any]:
+    try:
+        comments_client.set_acompanhamento(folio, corpo.ativo)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Erro ao salvar acompanhamento: {exc}") from exc
+    return {"folio": folio, "em_acompanhamento": corpo.ativo}
 
 
 # ----------------------------------------------------------------------

@@ -49,6 +49,13 @@ _STATUS_POS_OS_SET = set(STATUS_POS_OS_OPTIONS)
 TAG_OPTIONS = ["OS em campo", "Stand By", "Validação Final"]
 _TAG_SET = set(TAG_OPTIONS)
 
+# "Em Acompanhamento": marcador independente de status — usado pra continuar
+# de olho numa OS mesmo depois de finalizada no Fracttal (ex: ficou pendência
+# de garantia com o cliente). É um liga/desliga só, então tratamos como uma
+# "categoria" de uma label só, reaproveitando o mecanismo de _set_single_label.
+ACOMPANHAMENTO_LABEL = "Em Acompanhamento"
+_ACOMPANHAMENTO_SET = {ACOMPANHAMENTO_LABEL}
+
 
 class CommentsClient:
     def __init__(self) -> None:
@@ -196,14 +203,15 @@ class CommentsClient:
     # ------------------------------------------------------------------
     def get_all_label_mappings(
         self,
-    ) -> tuple[dict[str, str], dict[str, str], dict[str, list[str]]]:
-        """Busca diagnóstico, status pós-OS e etiquetas de uma vez só (uma
-        única atualização de cache). folio -> valor em cada um dos três.
+    ) -> tuple[dict[str, str], dict[str, str], dict[str, list[str]], dict[str, bool]]:
+        """Busca diagnóstico, status pós-OS, etiquetas e acompanhamento de uma
+        vez só (uma única atualização de cache). folio -> valor em cada um.
         """
         self._refresh_issue_cache()
         diagnosticos: dict[str, str] = {}
         status_pos_os: dict[str, str] = {}
         tags: dict[str, list[str]] = {}
+        acompanhamento: dict[str, bool] = {}
         for folio, info in self._issue_cache.items():
             diagnostico = next((lb for lb in info["labels"] if lb in _DIAGNOSTIC_SET), None)
             if diagnostico:
@@ -214,7 +222,9 @@ class CommentsClient:
             os_tags = [lb for lb in info["labels"] if lb in _TAG_SET]
             if os_tags:
                 tags[folio] = os_tags
-        return diagnosticos, status_pos_os, tags
+            if ACOMPANHAMENTO_LABEL in info["labels"]:
+                acompanhamento[folio] = True
+        return diagnosticos, status_pos_os, tags, acompanhamento
 
     def _add_label(self, number: int, label: str) -> None:
         resp = self._session.post(
@@ -264,6 +274,9 @@ class CommentsClient:
 
     def set_status_pos_os(self, folio: str, status: str | None) -> None:
         self._set_single_label(folio, status, _STATUS_POS_OS_SET)
+
+    def set_acompanhamento(self, folio: str, ativo: bool) -> None:
+        self._set_single_label(folio, ACOMPANHAMENTO_LABEL if ativo else None, _ACOMPANHAMENTO_SET)
 
     def toggle_tag(self, folio: str, tag: str) -> list[str]:
         """Ativa/desativa uma etiqueta local na OS. Retorna a lista atualizada."""

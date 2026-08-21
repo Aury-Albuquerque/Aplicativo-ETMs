@@ -20,7 +20,10 @@ const state = {
     criadoPor: "",
     responsavel: "",
     tiposTrabalho: new Set(["analise", "campo"]),
+    dataInicio: "",
+    dataFim: "",
   },
+  filtroDataHistorico: { inicio: "", fim: "" },
   tagsSelecionadas: new Set(),
   mostrarCanceladasPlanner: false,
   mostrarCanceladasHistorico: false,
@@ -34,6 +37,8 @@ const state = {
     cliente: "",
     criadoPor: "",
     tiposTrabalho: new Set(["analise", "campo"]),
+    dataInicio: "",
+    dataFim: "",
   },
   usinaAbertaAtual: null,
 };
@@ -55,6 +60,31 @@ function formatarDataHora(iso) {
   const data = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   return `${data} ${hora}`;
+}
+
+// Filtro de período: uma OS "estava ativa" entre dataInicioStr e dataFimStr
+// se ela já existia até o fim do período (criada até dataFim) e ainda não
+// tinha sido encerrada antes do início do período (encerrada antes de
+// dataInicio some da lista). OS ainda aberta (não finalizada/cancelada) não
+// tem "fim", então continua valendo enquanto já tiver sido criada a tempo.
+function osAtivaNoPeriodo(os, dataInicioStr, dataFimStr) {
+  if (!dataInicioStr && !dataFimStr) return true;
+  const inicioOs = os.data_criacao ? new Date(os.data_criacao) : null;
+  if (!inicioOs || Number.isNaN(inicioOs.getTime())) return true;
+
+  const encerrada = os.status_bucket === "finalizada" || os.status_bucket === "cancelada";
+  const fimOsBruto = encerrada ? os.data_final || os.data_criacao : null;
+  const fimOs = fimOsBruto ? new Date(fimOsBruto) : null;
+
+  if (dataFimStr) {
+    const fimFiltro = new Date(`${dataFimStr}T23:59:59`);
+    if (inicioOs > fimFiltro) return false;
+  }
+  if (dataInicioStr) {
+    const inicioFiltro = new Date(`${dataInicioStr}T00:00:00`);
+    if (fimOs && fimOs < inicioFiltro) return false;
+  }
+  return true;
 }
 
 function escapeHtml(texto) {
@@ -195,17 +225,45 @@ function statusPosOsBotaoHtml(os) {
   return `<button type="button" class="status-pos-os-btn" data-folio="${os.folio}" title="Definir status pós-OS">${os.status_pos_os ? "✎" : "+ status pós-OS"}</button>`;
 }
 
+function acompanhamentoBadgeHtml(os) {
+  return os.em_acompanhamento ? `<span class="badge badge-acompanhamento">Em Acompanhamento</span>` : "";
+}
+
+function acompanhamentoBotaoHtml(os) {
+  return `<button type="button" class="acompanhamento-btn ${os.em_acompanhamento ? "ativo" : ""}" data-folio="${os.folio}" title="Marcar/desmarcar como em acompanhamento">${os.em_acompanhamento ? "★ Em acompanhamento" : "☆ Acompanhar"}</button>`;
+}
+
+async function alternarAcompanhamento(os, btnEl) {
+  const novoValor = !os.em_acompanhamento;
+  if (btnEl) btnEl.disabled = true;
+  try {
+    await fetchJson(`/api/os/${encodeURIComponent(os.folio)}/acompanhamento`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ativo: novoValor }),
+    });
+    os.em_acompanhamento = novoValor;
+    aplicarFiltrosERenderizar();
+    if (state.usinaAbertaAtual) renderUsinaAbertaBoard();
+    renderEstacoesAcompanhamento();
+    if (state.modalFolioAtual === os.folio) abrirModal(os);
+  } catch (err) {
+    if (btnEl) btnEl.disabled = false;
+    alert(`Não foi possível salvar: ${err.message}`);
+  }
+}
+
 function renderCard(os, { comEtiquetas = false } = {}) {
   const div = document.createElement("div");
   div.className = "os-card";
   div.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${statusPosOsBadgeHtml(os)}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${statusPosOsBadgeHtml(os)} ${acompanhamentoBadgeHtml(os)}</div>
     <div class="titulo">${os.titulo || "(sem título)"}</div>
     <div class="meta">
       <span>${os.usina}</span>
       <span>${formatarData(os.data_criacao)}</span>
     </div>
-    <div class="diagnostico-row">${diagnosticoBotaoHtml(os)} ${statusPosOsBotaoHtml(os)}</div>
+    <div class="diagnostico-row">${diagnosticoBotaoHtml(os)} ${statusPosOsBotaoHtml(os)} ${acompanhamentoBotaoHtml(os)}</div>
     ${comEtiquetas ? renderTagsDoCard(os) : ""}
   `;
   div.addEventListener("click", (e) => {
@@ -222,6 +280,11 @@ function renderCard(os, { comEtiquetas = false } = {}) {
     if (e.target.closest(".status-pos-os-btn")) {
       e.stopPropagation();
       abrirStatusPosOsPopover(e.target, os);
+      return;
+    }
+    if (e.target.closest(".acompanhamento-btn")) {
+      e.stopPropagation();
+      alternarAcompanhamento(os, e.target.closest(".acompanhamento-btn"));
       return;
     }
     abrirModal(os);
@@ -453,6 +516,7 @@ function passaFiltrosGerais(os) {
   if (f.responsavel && (os.tecnico || "").trim() !== f.responsavel) return false;
   const tipoAtual = os.em_analise ? "analise" : "campo";
   if (!f.tiposTrabalho.has(tipoAtual)) return false;
+  if (!osAtivaNoPeriodo(os, f.dataInicio, f.dataFim)) return false;
   return true;
 }
 
@@ -586,6 +650,17 @@ function initFiltros() {
     aplicarFiltrosERenderizar();
   });
 
+  const inputDataInicio = document.getElementById("filtro-data-inicio");
+  const inputDataFim = document.getElementById("filtro-data-fim");
+  inputDataInicio.addEventListener("change", () => {
+    state.filtros.dataInicio = inputDataInicio.value;
+    aplicarFiltrosERenderizar();
+  });
+  inputDataFim.addEventListener("change", () => {
+    state.filtros.dataFim = inputDataFim.value;
+    aplicarFiltrosERenderizar();
+  });
+
   document.getElementById("filtro-limpar").addEventListener("click", () => {
     state.filtros = {
       cliente: "",
@@ -593,12 +668,16 @@ function initFiltros() {
       criadoPor: "",
       responsavel: "",
       tiposTrabalho: new Set(["analise", "campo"]),
+      dataInicio: "",
+      dataFim: "",
     };
     state.tagsSelecionadas.clear();
     selectCliente.value = "";
     inputUsina.value = "";
     document.getElementById("filtro-criador-input").value = "";
     document.getElementById("filtro-responsavel-input").value = "";
+    inputDataInicio.value = "";
+    inputDataFim.value = "";
     document.getElementById("tag-filtro-row").querySelectorAll(".tag-chip.selected").forEach((c) => c.classList.remove("selected"));
     document.querySelectorAll("#tab-planner .filtro-chips-inline .tag-chip").forEach((c) => c.classList.add("selected"));
     aplicarFiltrosERenderizar();
@@ -664,7 +743,19 @@ function passaFiltrosAbertas(os) {
   if (f.criadoPor && (os.criado_por || "").trim() !== f.criadoPor) return false;
   const tipoAtual = os.em_analise ? "analise" : "campo";
   if (!f.tiposTrabalho.has(tipoAtual)) return false;
+  if (!osAtivaNoPeriodo(os, f.dataInicio, f.dataFim)) return false;
   return true;
+}
+
+// "3 semanas em aberto" / "2 dias em aberto", a partir da OS mais antiga
+// (por data de criação) ainda não iniciada/em andamento daquela usina.
+function tempoEmAbertoTexto(dataMaisAntiga) {
+  if (!dataMaisAntiga) return "";
+  const dias = Math.floor((Date.now() - dataMaisAntiga.getTime()) / (1000 * 60 * 60 * 24));
+  if (dias <= 0) return "hoje";
+  if (dias < 7) return `${dias} dia${dias === 1 ? "" : "s"} em aberto`;
+  const semanas = Math.floor(dias / 7);
+  return `${semanas} semana${semanas === 1 ? "" : "s"} em aberto`;
 }
 
 function computeUsinasAbertas() {
@@ -675,9 +766,14 @@ function computeUsinasAbertas() {
   const porUsina = new Map();
   abertas.forEach((os) => {
     if (!porUsina.has(os.usina)) {
-      porUsina.set(os.usina, { nome: os.usina, cliente: os.cliente, quantidade: 0 });
+      porUsina.set(os.usina, { nome: os.usina, cliente: os.cliente, quantidade: 0, maisAntiga: null });
     }
-    porUsina.get(os.usina).quantidade += 1;
+    const info = porUsina.get(os.usina);
+    info.quantidade += 1;
+    const dt = os.data_criacao ? new Date(os.data_criacao) : null;
+    if (dt && !Number.isNaN(dt.getTime()) && (!info.maisAntiga || dt < info.maisAntiga)) {
+      info.maisAntiga = dt;
+    }
   });
   return Array.from(porUsina.values()).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 }
@@ -685,12 +781,64 @@ function computeUsinasAbertas() {
 function renderUsinaAbertaCard(info) {
   const div = document.createElement("div");
   div.className = "usina-card";
+  const tempo = tempoEmAbertoTexto(info.maisAntiga);
   div.innerHTML = `
     <h3>${info.nome}</h3>
-    <p>${info.quantidade} OS em aberto</p>
+    <p>${info.quantidade} OS em aberto ${tempo ? `<span class="tempo-aberto-badge">${tempo}</span>` : ""}</p>
   `;
   div.addEventListener("click", () => abrirUsinaAberta(info.nome));
   return div;
+}
+
+// ---------------------------------------------------------------------
+// Estações em Acompanhamento (subseção, logo abaixo das Estações em
+// Aberto): usinas com pelo menos 1 OS marcada manualmente como "Em
+// Acompanhamento" (normalmente já finalizada no Fracttal, mas com alguma
+// pendência — ex: garantia — que a gente ainda quer acompanhar por aqui).
+// ---------------------------------------------------------------------
+function computeUsinasAcompanhamento() {
+  if (!state.plannerData) return [];
+  const f = state.abertasFiltros;
+  const todas = [
+    ...state.plannerData.nao_iniciadas,
+    ...state.plannerData.em_andamento,
+    ...state.plannerData.finalizadas,
+    ...(state.plannerData.canceladas || []),
+  ];
+  const emAcompanhamento = todas
+    .filter((os) => os.em_acompanhamento)
+    .filter(passaFiltrosAbertas);
+  const porUsina = new Map();
+  emAcompanhamento.forEach((os) => {
+    if (!porUsina.has(os.usina)) {
+      porUsina.set(os.usina, { nome: os.usina, cliente: os.cliente, quantidade: 0 });
+    }
+    porUsina.get(os.usina).quantidade += 1;
+  });
+  return Array.from(porUsina.values()).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+function renderUsinaAcompanhamentoCard(info) {
+  const div = document.createElement("div");
+  div.className = "usina-card";
+  div.innerHTML = `
+    <h3>${info.nome}</h3>
+    <p>${info.quantidade} OS em acompanhamento</p>
+  `;
+  div.addEventListener("click", () => abrirUsinaAberta(info.nome));
+  return div;
+}
+
+function renderEstacoesAcompanhamento() {
+  const grid = document.getElementById("eea-acompanhamento-grid");
+  if (!grid) return;
+  const usinas = computeUsinasAcompanhamento();
+  grid.innerHTML = "";
+  if (usinas.length === 0) {
+    grid.innerHTML = `<div class="empty-msg">Nenhuma estação em acompanhamento</div>`;
+  } else {
+    usinas.forEach((info) => grid.appendChild(renderUsinaAcompanhamentoCard(info)));
+  }
 }
 
 function renderUsinasAbertasGrid() {
@@ -707,6 +855,7 @@ function renderUsinasAbertasGrid() {
   }
   const totalOs = usinas.reduce((soma, u) => soma + u.quantidade, 0);
   status.textContent = `${usinas.length} estaç${usinas.length === 1 ? "ão" : "ões"} · ${totalOs} OS em aberto`;
+  renderEstacoesAcompanhamento();
 }
 
 function popularFiltroClienteAbertas() {
@@ -757,21 +906,45 @@ function initFiltrosAbertas() {
     });
   });
 
+  const inputDataInicio = document.getElementById("eea-filtro-data-inicio");
+  const inputDataFim = document.getElementById("eea-filtro-data-fim");
+  inputDataInicio.addEventListener("change", () => {
+    state.abertasFiltros.dataInicio = inputDataInicio.value;
+    renderUsinasAbertasGrid();
+    if (state.usinaAbertaAtual) renderUsinaAbertaBoard();
+  });
+  inputDataFim.addEventListener("change", () => {
+    state.abertasFiltros.dataFim = inputDataFim.value;
+    renderUsinasAbertasGrid();
+    if (state.usinaAbertaAtual) renderUsinaAbertaBoard();
+  });
+
   document.getElementById("eea-filtro-limpar").addEventListener("click", () => {
-    state.abertasFiltros = { cliente: "", criadoPor: "", tiposTrabalho: new Set(["analise", "campo"]) };
+    state.abertasFiltros = {
+      cliente: "",
+      criadoPor: "",
+      tiposTrabalho: new Set(["analise", "campo"]),
+      dataInicio: "",
+      dataFim: "",
+    };
     selectCliente.value = "";
     document.getElementById("eea-filtro-criador-input").value = "";
+    inputDataInicio.value = "";
+    inputDataFim.value = "";
     document
       .querySelectorAll("#tab-abertas .filtro-chips-inline .tag-chip")
       .forEach((c) => c.classList.add("selected"));
     renderUsinasAbertasGrid();
+    if (state.usinaAbertaAtual) renderUsinaAbertaBoard();
   });
 }
 
 function renderUsinaAbertaBoard() {
   if (!state.plannerData || !state.usinaAbertaAtual) return;
   const nome = state.usinaAbertaAtual;
-  const doUsina = (lista) => (lista || []).filter((os) => os.usina === nome);
+  const f = state.abertasFiltros;
+  const doUsina = (lista) =>
+    (lista || []).filter((os) => os.usina === nome).filter((os) => osAtivaNoPeriodo(os, f.dataInicio, f.dataFim));
   renderColumn("eea-col-nao-iniciada", "eea-count-nao-iniciada", doUsina(state.plannerData.nao_iniciadas));
   renderColumn("eea-col-em-andamento", "eea-count-em-andamento", doUsina(state.plannerData.em_andamento), {
     comEtiquetas: true,
@@ -899,7 +1072,7 @@ function renderHistoryItem(os) {
   const div = document.createElement("div");
   div.className = "history-item";
   div.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${statusPosOsBadgeHtml(os)}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${statusPosOsBadgeHtml(os)} ${acompanhamentoBadgeHtml(os)}</div>
     <div class="titulo">${os.titulo || "(sem título)"}</div>
     <div class="meta">${os.etm_codigo || ""} · criada em ${formatarData(os.data_criacao)}</div>
   `;
@@ -909,9 +1082,11 @@ function renderHistoryItem(os) {
 
 function renderHistoricoLista() {
   const lista = document.getElementById("usina-historico-lista");
-  const visiveis = state.mostrarCanceladasHistorico
+  const semCanceladas = state.mostrarCanceladasHistorico
     ? state.historicoAtual
     : state.historicoAtual.filter((os) => os.status_bucket !== "cancelada");
+  const { inicio, fim } = state.filtroDataHistorico;
+  const visiveis = semCanceladas.filter((os) => osAtivaNoPeriodo(os, inicio, fim));
 
   lista.innerHTML = "";
   if (visiveis.length === 0) {
@@ -951,7 +1126,7 @@ function abrirModal(os) {
   const modal = document.getElementById("os-modal");
   const content = document.getElementById("modal-content");
   content.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${diagnosticoBotaoHtml(os)} ${statusPosOsBadgeHtml(os)} ${statusPosOsBotaoHtml(os)}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${diagnosticoBotaoHtml(os)} ${statusPosOsBadgeHtml(os)} ${statusPosOsBotaoHtml(os)} ${acompanhamentoBadgeHtml(os)} ${acompanhamentoBotaoHtml(os)}</div>
     <h3>${os.titulo || "(sem título)"}</h3>
     <dl>
       <dt>Usina</dt><dd>${os.usina}</dd>
@@ -993,6 +1168,13 @@ function abrirModal(os) {
     statusBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       abrirStatusPosOsPopover(statusBtn, os);
+    });
+  }
+  const acompanhamentoBtn = content.querySelector(".acompanhamento-btn");
+  if (acompanhamentoBtn) {
+    acompanhamentoBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      alternarAcompanhamento(os, acompanhamentoBtn);
     });
   }
 
@@ -1243,6 +1425,14 @@ function init() {
   });
   document.getElementById("filtro-mostrar-canceladas-historico").addEventListener("change", (e) => {
     state.mostrarCanceladasHistorico = e.target.checked;
+    renderHistoricoLista();
+  });
+  document.getElementById("historico-filtro-data-inicio").addEventListener("change", (e) => {
+    state.filtroDataHistorico.inicio = e.target.value;
+    renderHistoricoLista();
+  });
+  document.getElementById("historico-filtro-data-fim").addEventListener("change", (e) => {
+    state.filtroDataHistorico.fim = e.target.value;
     renderHistoricoLista();
   });
   document.getElementById("abrir-chat-usina-btn").addEventListener("click", abrirChatUsina);
