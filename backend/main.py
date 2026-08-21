@@ -142,7 +142,7 @@ def _normalize_os(raw: dict[str, Any], id_to_folio: dict[int, str] | None = None
         "data_inicial": raw.get("initial_date"),
         "data_final": raw.get("final_date"),
         "percentual": raw.get("completed_percentage"),
-        "url": f"https://apps.fracttal.com/#work_orders/{raw.get('id_work_order')}"
+        "url": f"https://app.fracttal.com/#work_orders/{raw.get('id_work_order')}"
         if raw.get("id_work_order")
         else None,
     }
