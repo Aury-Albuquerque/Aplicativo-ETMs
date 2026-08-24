@@ -1363,20 +1363,20 @@ function abrirModal(os) {
 }
 
 // ---------------------------------------------------------------------
-// Subtarefas (itens de checklist da OS no Fracttal — ex: Inversor,
-// Transformador, SPDA — cada um com seu técnico, status e comentário)
+// Subtarefas (itens do formulário/checklist da OS no Fracttal — a
+// pergunta que o técnico respondeu, ex: "Procedimento", e o texto que ele
+// escreveu, às vezes agrupadas por seção, ex: "ORDEM E LIMPEZA")
 // ---------------------------------------------------------------------
 function renderSubtarefaItem(st) {
   const div = document.createElement("div");
   div.className = "subtarefa-item";
-  const classeStatus = STATUS_FRACTTAL_CLASS[st.status_fracttal] || "";
   div.innerHTML = `
-    <div class="subtarefa-cabecalho">
-      <span class="subtarefa-descricao">${escapeHtml(st.descricao || "(sem descrição)")}</span>
-      ${st.status_fracttal ? `<span class="badge badge-fracttal ${classeStatus}">${st.status_fracttal}</span>` : ""}
-    </div>
-    <div class="subtarefa-meta">${st.tecnico ? escapeHtml(st.tecnico) : "Sem técnico atribuído"}</div>
-    ${st.comentario ? `<div class="subtarefa-comentario">${escapeHtml(st.comentario)}</div>` : ""}
+    <div class="subtarefa-descricao">${escapeHtml(st.descricao || "(sem descrição)")}</div>
+    ${
+      st.valor
+        ? `<div class="subtarefa-comentario">${escapeHtml(st.valor)}</div>`
+        : `<div class="subtarefa-meta">Sem resposta preenchida</div>`
+    }
   `;
   return div;
 }
@@ -1384,13 +1384,13 @@ function renderSubtarefaItem(st) {
 async function carregarSubtarefas(os) {
   const container = document.getElementById("modal-subtarefas");
   if (!container) return;
-  if (!os.id_work_order) {
+  if (!os.folio) {
     container.innerHTML = "";
     return;
   }
   container.innerHTML = `<h4>Subtarefas</h4><div class="empty-msg">Carregando subtarefas...</div>`;
   try {
-    const subtarefas = await fetchJson(`/api/work-orders/${encodeURIComponent(os.id_work_order)}/subtarefas`);
+    const subtarefas = await fetchJson(`/api/os/${encodeURIComponent(os.folio)}/subtarefas`);
     // Não deixa uma resposta atrasada de uma OS antiga sobrescrever a atual
     if (state.modalFolioAtual !== os.folio) return;
     if (subtarefas.length === 0) {
@@ -1400,7 +1400,17 @@ async function carregarSubtarefas(os) {
     container.innerHTML = `<h4>Subtarefas (${subtarefas.length})</h4>`;
     const lista = document.createElement("div");
     lista.className = "subtarefas-lista";
-    subtarefas.forEach((st) => lista.appendChild(renderSubtarefaItem(st)));
+    let grupoAtual = null;
+    subtarefas.forEach((st) => {
+      if (st.grupo && st.grupo !== grupoAtual) {
+        grupoAtual = st.grupo;
+        const grupoEl = document.createElement("div");
+        grupoEl.className = "subtarefa-grupo-titulo";
+        grupoEl.textContent = st.grupo;
+        lista.appendChild(grupoEl);
+      }
+      lista.appendChild(renderSubtarefaItem(st));
+    });
     container.appendChild(lista);
   } catch (err) {
     container.innerHTML = `<h4>Subtarefas</h4><div class="empty-msg">Erro ao carregar subtarefas: ${err.message}</div>`;

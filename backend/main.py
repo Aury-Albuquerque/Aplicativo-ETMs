@@ -150,16 +150,15 @@ def _normalize_os(raw: dict[str, Any], id_to_folio: dict[int, str] | None = None
 
 
 def _normalize_subtarefa(raw: dict[str, Any]) -> dict[str, Any]:
-    """Cada item do checklist de uma OS (Inversor, Transformador, SPDA etc.)
-    — mesma "forma" de uma OS no Fracttal, mas em granularidade de tarefa.
+    """Um item do formulário/checklist de uma OS — a pergunta (description)
+    e a resposta que o técnico preencheu (value), às vezes agrupada.
     """
     return {
-        "id_task": raw.get("id_task"),
         "descricao": raw.get("description"),
-        "comentario": raw.get("task_note") or None,
-        "tecnico": raw.get("personnel_description"),
-        "status_fracttal": _STATUS_FRACTTAL_LABEL.get(raw.get("id_status_work_order_task")),
-        "percentual": raw.get("completed_percentage"),
+        "valor": raw.get("value"),
+        "grupo": raw.get("group") or None,
+        "obrigatoria": raw.get("is_required"),
+        "ordem": raw.get("order_number"),
     }
 
 
@@ -255,15 +254,16 @@ def get_historico_usina(usina: str, refresh: bool = False) -> list[dict[str, Any
     return historico
 
 
-@app.get("/api/work-orders/{id_work_order}/subtarefas")
-def get_subtarefas(id_work_order: int) -> list[dict[str, Any]]:
-    """Subtarefas (itens de checklist) de uma OS, com técnico/status/comentário
-    de cada uma — puxado sob demanda (não faz parte do /api/planner).
+@app.get("/api/os/{folio}/subtarefas")
+def get_subtarefas(folio: str) -> list[dict[str, Any]]:
+    """Itens do formulário/checklist de uma OS (pergunta + resposta do
+    técnico) — puxado sob demanda (não faz parte do /api/planner).
     """
     try:
-        raw_rows = fracttal_client.get_work_order_tasks(id_work_order)
+        raw_rows = fracttal_client.get_work_order_subtasks(folio)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Erro ao consultar Fracttal: {exc}") from exc
+    raw_rows.sort(key=lambda r: r.get("order_number") or 0)
     return [_normalize_subtarefa(r) for r in raw_rows]
 
 

@@ -2,7 +2,7 @@
 ; Compilar com: ISCC installer.iss
 
 #define MyAppName "ETM Grid Co"
-#define MyAppVersion "1.10.0"
+#define MyAppVersion "1.10.1"
 #define MyAppPublisher "Grid Co."
 #define MyAppExeName "ETM-GridCo.exe"
 

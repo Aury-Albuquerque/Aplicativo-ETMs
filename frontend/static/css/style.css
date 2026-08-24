@@ -786,18 +786,20 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
   padding-right: 4px;
 }
 
+.subtarefa-grupo-titulo {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--lime);
+  font-weight: 700;
+  margin: 6px 0 -2px;
+}
+
 .subtarefa-item {
   background: var(--navy-lighter);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 12px;
-}
-
-.subtarefa-cabecalho {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
 }
 
 .subtarefa-descricao { font-size: 13px; font-weight: 600; }
