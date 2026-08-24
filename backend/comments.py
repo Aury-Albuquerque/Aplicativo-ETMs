@@ -272,6 +272,33 @@ class CommentsClient:
     def set_diagnostico(self, folio: str, diagnostico: str | None) -> None:
         self._set_single_label(folio, diagnostico, _DIAGNOSTIC_SET)
 
+    def get_diagnostico_timestamp(self, folio: str) -> str | None:
+        """Data em que a Engenharia definiu o diagnóstico (encerrou aquela
+        ETM) pela última vez — não guardamos isso nós mesmos, então lemos do
+        histórico de eventos da Issue no GitHub (Timeline API), que registra
+        quando cada label foi aplicada. Usado sob demanda, ao abrir o modal.
+        """
+        folio = str(folio)
+        info = self._find_issue(folio)
+        if info is None:
+            return None
+        resp = self._session.get(
+            self._api_url(f"/issues/{info['number']}/timeline"),
+            headers=_HEADERS,
+            params={"per_page": 100},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        eventos = resp.json()
+        aplicacoes = [
+            e
+            for e in eventos
+            if e.get("event") == "labeled" and (e.get("label") or {}).get("name") in _DIAGNOSTIC_SET
+        ]
+        if not aplicacoes:
+            return None
+        return aplicacoes[-1].get("created_at")
+
     def set_status_pos_os(self, folio: str, status: str | None) -> None:
         self._set_single_label(folio, status, _STATUS_POS_OS_SET)
 

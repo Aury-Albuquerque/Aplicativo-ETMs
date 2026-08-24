@@ -93,7 +93,11 @@ _STATUS_FRACTTAL_LABEL = {
     0: "Não iniciada",
     1: "Em progresso",
     2: "Pausada",
-    3: "Finalizada",
+    # "Finalizada" sozinho confundia quem via os dois selos juntos (bucket
+    # "Em andamento" + status da tarefa "Finalizada") — parece contraditório
+    # pra quem não sabe que é o responsável que concluiu a tarefa dele, mas a
+    # OS como um todo ainda não foi encerrada/revisada no Fracttal.
+    3: "Finalizada pelo responsável",
 }
 
 
@@ -344,6 +348,18 @@ def definir_diagnostico(folio: str, corpo: DiagnosticoIn) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Erro ao salvar diagnóstico: {exc}") from exc
     return {"folio": folio, "diagnostico": corpo.diagnostico}
+
+
+@app.get("/api/os/{folio}/diagnostico/data")
+def get_data_diagnostico(folio: str) -> dict[str, Any]:
+    """Quando a Engenharia definiu o diagnóstico dessa OS (data de
+    encerramento pela Engenharia) — puxado sob demanda, ao abrir o modal.
+    """
+    try:
+        data = comments_client.get_diagnostico_timestamp(folio)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Erro ao consultar GitHub: {exc}") from exc
+    return {"folio": folio, "data_encerramento_engenharia": data}
 
 
 # ----------------------------------------------------------------------

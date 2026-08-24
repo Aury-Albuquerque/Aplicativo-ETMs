@@ -207,7 +207,7 @@ const STATUS_FRACTTAL_CLASS = {
   "Não iniciada": "badge-fracttal-nao-iniciada",
   "Em progresso": "badge-fracttal-progresso",
   "Pausada": "badge-fracttal-pausada",
-  "Finalizada": "badge-fracttal-finalizada",
+  "Finalizada pelo responsável": "badge-fracttal-finalizada",
 };
 
 function statusFracttalBadgeHtml(os) {
@@ -768,11 +768,22 @@ function tempoEmAbertoTexto(dataMaisAntiga) {
   return `${semanas} semana${semanas === 1 ? "" : "s"} em aberto`;
 }
 
+// A OS só sai das "Estações em Aberto" quando a Engenharia encerra (define
+// um diagnóstico) — não quando o Fracttal marca a tarefa como finalizada
+// pelo responsável, já que isso não significa que a Engenharia já revisou.
+function osAbertaParaEngenharia(os) {
+  return os.status_bucket !== "cancelada" && !os.diagnostico;
+}
+
 function computeUsinasAbertas() {
   if (!state.plannerData) return [];
-  const abertas = [...state.plannerData.nao_iniciadas, ...state.plannerData.em_andamento].filter(
-    passaFiltrosAbertas
-  );
+  const abertas = [
+    ...state.plannerData.nao_iniciadas,
+    ...state.plannerData.em_andamento,
+    ...state.plannerData.finalizadas,
+  ]
+    .filter(osAbertaParaEngenharia)
+    .filter(passaFiltrosAbertas);
   const porUsina = new Map();
   abertas.forEach((os) => {
     if (!porUsina.has(os.usina)) {
@@ -873,7 +884,11 @@ function popularFiltroClienteAbertas() {
   const select = document.getElementById("eea-filtro-cliente");
   if (!select) return;
   const valorAtual = select.value;
-  const abertas = [...state.plannerData.nao_iniciadas, ...state.plannerData.em_andamento];
+  const abertas = [
+    ...state.plannerData.nao_iniciadas,
+    ...state.plannerData.em_andamento,
+    ...state.plannerData.finalizadas,
+  ].filter(osAbertaParaEngenharia);
   const clientes = Array.from(new Set(abertas.map((o) => o.cliente).filter(Boolean))).sort();
   select.innerHTML =
     `<option value="">Todos</option>` + clientes.map((c) => `<option value="${c}">${c}</option>`).join("");
@@ -1315,6 +1330,11 @@ function abrirModal(os) {
       <dt>Criado por</dt><dd>${os.criado_por || "—"}</dd>
       <dt>Etiquetas do Fracttal</dt><dd>${(os.etiquetas_fracttal || []).join(", ") || "—"}</dd>
       ${
+        os.diagnostico
+          ? `<dt>Encerrada pela Engenharia em</dt><dd id="modal-encerramento-engenharia">Carregando...</dd>`
+          : ""
+      }
+      ${
         os.os_pai_id
           ? `<dt>OS Pai</dt><dd>${os.os_pai_folio ? `OS ${os.os_pai_folio}` : `OT interna #${os.os_pai_id} (não carregada nesta consulta)`}</dd>`
           : ""
@@ -1360,6 +1380,23 @@ function abrirModal(os) {
   atualizarEstadoInputComentario();
   carregarComentarios(os.folio);
   carregarSubtarefas(os);
+  carregarDataEncerramentoEngenharia(os);
+}
+
+async function carregarDataEncerramentoEngenharia(os) {
+  if (!os.diagnostico) return;
+  try {
+    const resp = await fetchJson(`/api/os/${encodeURIComponent(os.folio)}/diagnostico/data`);
+    if (state.modalFolioAtual !== os.folio) return;
+    const el = document.getElementById("modal-encerramento-engenharia");
+    if (!el) return;
+    el.textContent = resp.data_encerramento_engenharia
+      ? formatarData(resp.data_encerramento_engenharia)
+      : "Não foi possível determinar";
+  } catch (err) {
+    const el = document.getElementById("modal-encerramento-engenharia");
+    if (el) el.textContent = "Não foi possível determinar";
+  }
 }
 
 // ---------------------------------------------------------------------
