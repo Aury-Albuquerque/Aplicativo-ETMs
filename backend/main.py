@@ -142,9 +142,24 @@ def _normalize_os(raw: dict[str, Any], id_to_folio: dict[int, str] | None = None
         "data_inicial": raw.get("initial_date"),
         "data_final": raw.get("final_date"),
         "percentual": raw.get("completed_percentage"),
+        "id_work_order": raw.get("id_work_order"),
         "url": f"https://app.fracttal.com/#work_orders/{raw.get('id_work_order')}"
         if raw.get("id_work_order")
         else None,
+    }
+
+
+def _normalize_subtarefa(raw: dict[str, Any]) -> dict[str, Any]:
+    """Cada item do checklist de uma OS (Inversor, Transformador, SPDA etc.)
+    — mesma "forma" de uma OS no Fracttal, mas em granularidade de tarefa.
+    """
+    return {
+        "id_task": raw.get("id_task"),
+        "descricao": raw.get("description"),
+        "comentario": raw.get("task_note") or None,
+        "tecnico": raw.get("personnel_description"),
+        "status_fracttal": _STATUS_FRACTTAL_LABEL.get(raw.get("id_status_work_order_task")),
+        "percentual": raw.get("completed_percentage"),
     }
 
 
@@ -238,6 +253,18 @@ def get_historico_usina(usina: str, refresh: bool = False) -> list[dict[str, Any
         historico.append(os_norm)
     historico.sort(key=lambda o: o.get("data_criacao") or "", reverse=True)
     return historico
+
+
+@app.get("/api/work-orders/{id_work_order}/subtarefas")
+def get_subtarefas(id_work_order: int) -> list[dict[str, Any]]:
+    """Subtarefas (itens de checklist) de uma OS, com técnico/status/comentário
+    de cada uma — puxado sob demanda (não faz parte do /api/planner).
+    """
+    try:
+        raw_rows = fracttal_client.get_work_order_tasks(id_work_order)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Erro ao consultar Fracttal: {exc}") from exc
+    return [_normalize_subtarefa(r) for r in raw_rows]
 
 
 @app.get("/api/usinas/{usina}/chat")

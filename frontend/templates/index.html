@@ -19,6 +19,7 @@
       <button class="tab-btn active" data-tab="planner">Planner</button>
       <button class="tab-btn" data-tab="historico">Histórico</button>
       <button class="tab-btn" data-tab="abertas">Estações em Aberto</button>
+      <button class="tab-btn" data-tab="fechamentos">Fechamentos</button>
     </nav>
     <div class="nome-usuario-wrapper">
       <label for="nome-usuario-input">Seu nome</label>
@@ -237,6 +238,43 @@
           </div>
         </div>
       </div>
+    </section>
+
+    <!-- SEÇÃO 4: FECHAMENTOS -->
+    <section id="tab-fechamentos" class="tab-panel">
+      <div id="fech-status" class="status-line"></div>
+
+      <div class="filtros-bar">
+        <div class="filtro-item">
+          <label for="fech-filtro-cliente">Cliente</label>
+          <select id="fech-filtro-cliente">
+            <option value="">Todos</option>
+          </select>
+        </div>
+        <div class="filtro-item combobox" id="fech-filtro-criador-wrapper">
+          <label for="fech-filtro-criador-input">Criado por</label>
+          <input id="fech-filtro-criador-input" type="text" placeholder="Todos" autocomplete="off" />
+          <div id="fech-filtro-criador-dropdown" class="combobox-dropdown hidden"></div>
+        </div>
+        <div class="filtro-item">
+          <label>Tipo de trabalho</label>
+          <div class="filtro-chips-inline">
+            <button type="button" class="tag-chip selected" data-tipo-fechamentos="analise">Análise de Engenharia</button>
+            <button type="button" class="tag-chip selected" data-tipo-fechamentos="campo">Campo</button>
+          </div>
+        </div>
+        <div class="filtro-item filtro-item-data">
+          <label>Período (data de fechamento)</label>
+          <div class="filtro-data-row">
+            <input type="date" id="fech-filtro-data-inicio" />
+            <span>até</span>
+            <input type="date" id="fech-filtro-data-fim" />
+          </div>
+        </div>
+        <button id="fech-filtro-limpar" class="filtro-limpar-btn">Limpar filtros</button>
+      </div>
+
+      <div id="fech-semanas-lista" class="fech-semanas-lista"></div>
     </section>
   </main>
 

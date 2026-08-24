@@ -41,6 +41,13 @@ const state = {
     dataFim: "",
   },
   usinaAbertaAtual: null,
+  fechamentosFiltros: {
+    cliente: "",
+    criadoPor: "",
+    tiposTrabalho: new Set(["analise", "campo"]),
+    dataInicio: "",
+    dataFim: "",
+  },
 };
 
 // ---------------------------------------------------------------------
@@ -727,6 +734,9 @@ async function carregarPlanner(refresh = false) {
     popularFiltroClienteAbertas();
     renderUsinasAbertasGrid();
     if (state.usinaAbertaAtual) renderUsinaAbertaBoard();
+
+    popularFiltroClienteFechamentos();
+    renderFechamentosLista();
   } catch (err) {
     statusEl.textContent = `Erro ao carregar: ${err.message}`;
     statusEl.classList.add("error");
@@ -976,6 +986,172 @@ function irParaHistoricoDaUsina(nomeUsina) {
 }
 
 // ---------------------------------------------------------------------
+// Fechamentos (quantas OS foram finalizadas por semana — indicador de
+// rendimento do time, agrupado pela data de fechamento no Fracttal)
+// ---------------------------------------------------------------------
+function passaFiltrosFechamentos(os) {
+  const f = state.fechamentosFiltros;
+  if (!os.data_final) return false;
+  if (f.cliente && os.cliente !== f.cliente) return false;
+  if (f.criadoPor && (os.criado_por || "").trim() !== f.criadoPor) return false;
+  const tipoAtual = os.em_analise ? "analise" : "campo";
+  if (!f.tiposTrabalho.has(tipoAtual)) return false;
+  const dataFinal = new Date(os.data_final);
+  if (f.dataInicio && dataFinal < new Date(`${f.dataInicio}T00:00:00`)) return false;
+  if (f.dataFim && dataFinal > new Date(`${f.dataFim}T23:59:59`)) return false;
+  return true;
+}
+
+// Segunda-feira da semana em que a data cai (padroniza o agrupamento).
+function inicioDaSemana(dataIso) {
+  const d = new Date(dataIso);
+  d.setHours(0, 0, 0, 0);
+  const diaSemana = d.getDay(); // 0 = domingo .. 6 = sábado
+  const diff = diaSemana === 0 ? -6 : 1 - diaSemana;
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+function computeFechamentosPorSemana() {
+  if (!state.plannerData) return [];
+  const finalizadas = state.plannerData.finalizadas.filter(passaFiltrosFechamentos);
+  const porSemana = new Map();
+  finalizadas.forEach((os) => {
+    const inicio = inicioDaSemana(os.data_final);
+    const chave = inicio.toISOString().slice(0, 10);
+    if (!porSemana.has(chave)) {
+      const fim = new Date(inicio);
+      fim.setDate(inicio.getDate() + 6);
+      porSemana.set(chave, { chave, inicio, fim, os: [] });
+    }
+    porSemana.get(chave).os.push(os);
+  });
+  return Array.from(porSemana.values()).sort((a, b) => b.inicio - a.inicio);
+}
+
+function renderSemanaFechamentoCard(semana) {
+  const div = document.createElement("div");
+  div.className = "fech-semana-card";
+  div.innerHTML = `
+    <div class="fech-semana-header">
+      <button type="button" class="collapse-btn fech-semana-toggle" aria-expanded="false">▸</button>
+      <span class="fech-semana-label">Semana de ${formatarData(semana.inicio)} a ${formatarData(semana.fim)}</span>
+      <span class="count">(${semana.os.length})</span>
+    </div>
+    <div class="card-list fech-semana-lista hidden"></div>
+  `;
+  const listaEl = div.querySelector(".fech-semana-lista");
+  semana.os
+    .slice()
+    .sort((a, b) => new Date(b.data_final) - new Date(a.data_final))
+    .forEach((os) => listaEl.appendChild(renderCard(os)));
+
+  const toggleBtn = div.querySelector(".fech-semana-toggle");
+  div.querySelector(".fech-semana-header").addEventListener("click", () => {
+    const colapsada = listaEl.classList.toggle("hidden");
+    toggleBtn.textContent = colapsada ? "▸" : "▾";
+    toggleBtn.setAttribute("aria-expanded", String(!colapsada));
+  });
+  return div;
+}
+
+function renderFechamentosLista() {
+  const container = document.getElementById("fech-semanas-lista");
+  const status = document.getElementById("fech-status");
+  if (!container) return;
+
+  const semanas = computeFechamentosPorSemana();
+  container.innerHTML = "";
+  if (semanas.length === 0) {
+    container.innerHTML = `<div class="empty-msg">Nenhuma OS fechada encontrada pros filtros escolhidos</div>`;
+    status.textContent = "0 OS fechadas";
+    return;
+  }
+  semanas.forEach((semana) => container.appendChild(renderSemanaFechamentoCard(semana)));
+  const total = semanas.reduce((soma, s) => soma + s.os.length, 0);
+  status.textContent = `${total} OS fechada${total === 1 ? "" : "s"} em ${semanas.length} semana${semanas.length === 1 ? "" : "s"}`;
+}
+
+function popularFiltroClienteFechamentos() {
+  if (!state.plannerData) return;
+  const select = document.getElementById("fech-filtro-cliente");
+  if (!select) return;
+  const valorAtual = select.value;
+  const clientes = Array.from(
+    new Set(state.plannerData.finalizadas.map((o) => o.cliente).filter(Boolean))
+  ).sort();
+  select.innerHTML =
+    `<option value="">Todos</option>` + clientes.map((c) => `<option value="${c}">${c}</option>`).join("");
+  select.value = clientes.includes(valorAtual) ? valorAtual : "";
+}
+
+function initFiltrosFechamentos() {
+  const selectCliente = document.getElementById("fech-filtro-cliente");
+  selectCliente.addEventListener("change", () => {
+    state.fechamentosFiltros.cliente = selectCliente.value;
+    renderFechamentosLista();
+  });
+
+  initCombobox({
+    wrapperId: "fech-filtro-criador-wrapper",
+    inputId: "fech-filtro-criador-input",
+    dropdownId: "fech-filtro-criador-dropdown",
+    getOpcoes: () => state.criadoresDisponiveis || [],
+    onSelect: (nome) => {
+      state.fechamentosFiltros.criadoPor = nome;
+      renderFechamentosLista();
+    },
+    onClear: () => {
+      state.fechamentosFiltros.criadoPor = "";
+      renderFechamentosLista();
+    },
+  });
+
+  document.querySelectorAll('#tab-fechamentos .filtro-chips-inline .tag-chip[data-tipo-fechamentos]').forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const tipo = chip.dataset.tipoFechamentos;
+      if (state.fechamentosFiltros.tiposTrabalho.has(tipo)) {
+        if (state.fechamentosFiltros.tiposTrabalho.size === 1) return;
+        state.fechamentosFiltros.tiposTrabalho.delete(tipo);
+      } else {
+        state.fechamentosFiltros.tiposTrabalho.add(tipo);
+      }
+      chip.classList.toggle("selected");
+      renderFechamentosLista();
+    });
+  });
+
+  const inputDataInicio = document.getElementById("fech-filtro-data-inicio");
+  const inputDataFim = document.getElementById("fech-filtro-data-fim");
+  inputDataInicio.addEventListener("change", () => {
+    state.fechamentosFiltros.dataInicio = inputDataInicio.value;
+    renderFechamentosLista();
+  });
+  inputDataFim.addEventListener("change", () => {
+    state.fechamentosFiltros.dataFim = inputDataFim.value;
+    renderFechamentosLista();
+  });
+
+  document.getElementById("fech-filtro-limpar").addEventListener("click", () => {
+    state.fechamentosFiltros = {
+      cliente: "",
+      criadoPor: "",
+      tiposTrabalho: new Set(["analise", "campo"]),
+      dataInicio: "",
+      dataFim: "",
+    };
+    selectCliente.value = "";
+    document.getElementById("fech-filtro-criador-input").value = "";
+    inputDataInicio.value = "";
+    inputDataFim.value = "";
+    document
+      .querySelectorAll("#tab-fechamentos .filtro-chips-inline .tag-chip")
+      .forEach((c) => c.classList.add("selected"));
+    renderFechamentosLista();
+  });
+}
+
+// ---------------------------------------------------------------------
 // Histórico — clientes
 // ---------------------------------------------------------------------
 function renderClienteCard(cliente, quantidadeUsinas) {
@@ -1153,6 +1329,7 @@ function abrirModal(os) {
       <dt>Finalizada em</dt><dd>${formatarData(os.data_final)}</dd>
     </dl>
     ${os.url ? `<a class="fracttal-link" href="${os.url}" target="_blank" rel="noopener">Abrir no Fracttal ↗</a>` : ""}
+    <div id="modal-subtarefas" class="modal-subtarefas"></div>
   `;
   modal.classList.remove("hidden");
 
@@ -1182,6 +1359,52 @@ function abrirModal(os) {
   document.getElementById("comentario-texto").value = "";
   atualizarEstadoInputComentario();
   carregarComentarios(os.folio);
+  carregarSubtarefas(os);
+}
+
+// ---------------------------------------------------------------------
+// Subtarefas (itens de checklist da OS no Fracttal — ex: Inversor,
+// Transformador, SPDA — cada um com seu técnico, status e comentário)
+// ---------------------------------------------------------------------
+function renderSubtarefaItem(st) {
+  const div = document.createElement("div");
+  div.className = "subtarefa-item";
+  const classeStatus = STATUS_FRACTTAL_CLASS[st.status_fracttal] || "";
+  div.innerHTML = `
+    <div class="subtarefa-cabecalho">
+      <span class="subtarefa-descricao">${escapeHtml(st.descricao || "(sem descrição)")}</span>
+      ${st.status_fracttal ? `<span class="badge badge-fracttal ${classeStatus}">${st.status_fracttal}</span>` : ""}
+    </div>
+    <div class="subtarefa-meta">${st.tecnico ? escapeHtml(st.tecnico) : "Sem técnico atribuído"}</div>
+    ${st.comentario ? `<div class="subtarefa-comentario">${escapeHtml(st.comentario)}</div>` : ""}
+  `;
+  return div;
+}
+
+async function carregarSubtarefas(os) {
+  const container = document.getElementById("modal-subtarefas");
+  if (!container) return;
+  if (!os.id_work_order) {
+    container.innerHTML = "";
+    return;
+  }
+  container.innerHTML = `<h4>Subtarefas</h4><div class="empty-msg">Carregando subtarefas...</div>`;
+  try {
+    const subtarefas = await fetchJson(`/api/work-orders/${encodeURIComponent(os.id_work_order)}/subtarefas`);
+    // Não deixa uma resposta atrasada de uma OS antiga sobrescrever a atual
+    if (state.modalFolioAtual !== os.folio) return;
+    if (subtarefas.length === 0) {
+      container.innerHTML = `<h4>Subtarefas</h4><div class="empty-msg">Nenhuma subtarefa encontrada</div>`;
+      return;
+    }
+    container.innerHTML = `<h4>Subtarefas (${subtarefas.length})</h4>`;
+    const lista = document.createElement("div");
+    lista.className = "subtarefas-lista";
+    subtarefas.forEach((st) => lista.appendChild(renderSubtarefaItem(st)));
+    container.appendChild(lista);
+  } catch (err) {
+    container.innerHTML = `<h4>Subtarefas</h4><div class="empty-msg">Erro ao carregar subtarefas: ${err.message}</div>`;
+  }
 }
 
 function fecharModal() {
@@ -1377,6 +1600,7 @@ function init() {
   initColunasRetrateis();
   initFiltros();
   initFiltrosAbertas();
+  initFiltrosFechamentos();
   renderTagFiltroRow();
   carregarPlanner();
   carregarUsinas();

@@ -201,6 +201,16 @@ class FracttalClient:
                     print(f"[fracttal_client] Falha ao buscar OS de {code}: {exc}")
         return all_orders
 
+    def get_work_order_tasks(self, id_work_order: int) -> list[dict[str, Any]]:
+        """Todas as "subtarefas" (linhas de checklist) de uma OS específica —
+        cada equipamento do checklist (Inversor, Transformador, SPDA etc.)
+        vira uma linha própria no Fracttal, cada uma com seu técnico, status
+        e comentário (task_note) — diferente da busca por ETM (code_asset),
+        que só traz a linha referente à Estação Meteorológica em si. Usado
+        sob demanda, ao abrir o modal de uma OS — não entra no fetch em massa.
+        """
+        return self._get_all_pages("/work_orders", {"id_work_order": id_work_order})
+
     def get_relevant_work_orders(self, force_refresh: bool = False) -> list[dict[str, Any]]:
         """OS de ETM relevantes pro app: as Corretivas (indo a campo) E as que
         ainda estão em análise, atribuídas a um dos ANALISTAS_ETM (ver config).
