@@ -4,6 +4,19 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ETM · Grid Co.</title>
+  <script>
+    // Aplica o tema salvo antes da página desenhar, pra não "piscar" claro
+    // e depois escuro (ou vice-versa) no primeiro carregamento.
+    (function () {
+      try {
+        if (localStorage.getItem("etm_tema") === "light") {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      } catch (e) {
+        /* localStorage indisponível — segue com o tema escuro padrão */
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="/static/css/style.css" />
 </head>
 <body>
@@ -25,6 +38,7 @@
       <label for="nome-usuario-input">Seu nome</label>
       <input id="nome-usuario-input" type="text" placeholder="Ex: João Vieira" autocomplete="off" />
     </div>
+    <button id="tema-toggle-btn" class="tema-toggle-btn" title="Alternar tema claro/escuro">🌙</button>
     <button id="refresh-btn" class="refresh-btn" title="Atualizar dados do Fracttal">⟳ Atualizar</button>
   </header>
 
@@ -201,6 +215,7 @@
         <button id="eea-voltar-btn" class="back-btn">&larr; Voltar às estações em aberto</button>
         <div class="usina-titulo-row">
           <h2 id="eea-usina-titulo"></h2>
+          <button id="eea-finalizar-engenharia-btn" class="abrir-chat-usina-btn" title="Marca todas as OS já finalizadas no Fracttal desta usina como Finalizadas pela Engenharia">Finalizar pela Engenharia</button>
           <button id="eea-ver-historico-btn" class="abrir-chat-usina-btn">Ver histórico desta usina →</button>
         </div>
         <div class="board">
@@ -242,6 +257,10 @@
 
     <!-- SEÇÃO 4: FECHAMENTOS -->
     <section id="tab-fechamentos" class="tab-panel">
+      <div class="fech-visao-toggle filtro-chips-inline">
+        <button type="button" class="tag-chip selected" data-visao-fechamentos="fracttal">Fechamento no Fracttal</button>
+        <button type="button" class="tag-chip" data-visao-fechamentos="engenharia">Fechamento pela Engenharia</button>
+      </div>
       <div id="fech-status" class="status-line"></div>
 
       <div class="filtros-bar">

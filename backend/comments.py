@@ -56,6 +56,15 @@ _TAG_SET = set(TAG_OPTIONS)
 ACOMPANHAMENTO_LABEL = "Em Acompanhamento"
 _ACOMPANHAMENTO_SET = {ACOMPANHAMENTO_LABEL}
 
+# "Finalizado pela Engenharia": encerra a OS pro time de Engenharia sem
+# precisar escolher um diagnóstico específico — usado principalmente pro
+# botão de "encerrar em lote" as OS antigas já finalizadas no Fracttal.
+# Junto com o diagnóstico, é um dos dois jeitos de uma OS sair das
+# "Estações em Aberto" e contar como "encerrada pela Engenharia".
+FINALIZADO_ENGENHARIA_LABEL = "Finalizado pela Engenharia"
+_FINALIZADO_ENGENHARIA_SET = {FINALIZADO_ENGENHARIA_LABEL}
+_LABELS_ENCERRAMENTO_ENGENHARIA = _DIAGNOSTIC_SET | _FINALIZADO_ENGENHARIA_SET
+
 
 class CommentsClient:
     def __init__(self) -> None:
@@ -65,6 +74,15 @@ class CommentsClient:
         self._issue_cache_at: float = 0.0
         self._issue_cache_ttl = 60.0  # 1 minuto
         self._lock = threading.Lock()
+
+        # folio -> data de encerramento pela Engenharia (diagnóstico ou
+        # "Finalizado pela Engenharia") — exige 1 chamada de API por OS
+        # encerrada (Timeline do GitHub não tem versão "em lote"), então
+        # cacheamos por mais tempo que o resto (é só pra um relatório).
+        self._closed_dates_cache: dict[str, str] | None = None
+        self._closed_dates_cache_at: float = 0.0
+        self._closed_dates_cache_ttl = 5 * 60  # 5 minutos
+        self._closed_dates_lock = threading.Lock()
 
     def _api_url(self, path: str) -> str:
         return f"{config.GITHUB_API_BASE}/repos/{config.GITHUB_REPO}{path}"
@@ -203,15 +221,17 @@ class CommentsClient:
     # ------------------------------------------------------------------
     def get_all_label_mappings(
         self,
-    ) -> tuple[dict[str, str], dict[str, str], dict[str, list[str]], dict[str, bool]]:
-        """Busca diagnóstico, status pós-OS, etiquetas e acompanhamento de uma
-        vez só (uma única atualização de cache). folio -> valor em cada um.
+    ) -> tuple[dict[str, str], dict[str, str], dict[str, list[str]], dict[str, bool], dict[str, bool]]:
+        """Busca diagnóstico, status pós-OS, etiquetas, acompanhamento e
+        finalizado-pela-Engenharia de uma vez só (uma única atualização de
+        cache). folio -> valor em cada um.
         """
         self._refresh_issue_cache()
         diagnosticos: dict[str, str] = {}
         status_pos_os: dict[str, str] = {}
         tags: dict[str, list[str]] = {}
         acompanhamento: dict[str, bool] = {}
+        finalizado_engenharia: dict[str, bool] = {}
         for folio, info in self._issue_cache.items():
             diagnostico = next((lb for lb in info["labels"] if lb in _DIAGNOSTIC_SET), None)
             if diagnostico:
@@ -224,7 +244,9 @@ class CommentsClient:
                 tags[folio] = os_tags
             if ACOMPANHAMENTO_LABEL in info["labels"]:
                 acompanhamento[folio] = True
-        return diagnosticos, status_pos_os, tags, acompanhamento
+            if FINALIZADO_ENGENHARIA_LABEL in info["labels"]:
+                finalizado_engenharia[folio] = True
+        return diagnosticos, status_pos_os, tags, acompanhamento, finalizado_engenharia
 
     def _add_label(self, number: int, label: str) -> None:
         resp = self._session.post(
@@ -269,19 +291,19 @@ class CommentsClient:
             if novo_valor:
                 labels.add(novo_valor)
 
+    def _invalidar_cache_datas_fechamento(self) -> None:
+        with self._closed_dates_lock:
+            self._closed_dates_cache = None
+
     def set_diagnostico(self, folio: str, diagnostico: str | None) -> None:
         self._set_single_label(folio, diagnostico, _DIAGNOSTIC_SET)
+        self._invalidar_cache_datas_fechamento()
 
-    def get_diagnostico_timestamp(self, folio: str) -> str | None:
-        """Data em que a Engenharia definiu o diagnóstico (encerrou aquela
-        ETM) pela última vez — não guardamos isso nós mesmos, então lemos do
-        histórico de eventos da Issue no GitHub (Timeline API), que registra
-        quando cada label foi aplicada. Usado sob demanda, ao abrir o modal.
+    def _labeled_timestamp(self, info: dict[str, Any], categoria: set[str]) -> str | None:
+        """Data em que a última label de `categoria` foi aplicada a essa
+        Issue — lida do histórico de eventos (Timeline API do GitHub), já
+        que não guardamos isso nós mesmos.
         """
-        folio = str(folio)
-        info = self._find_issue(folio)
-        if info is None:
-            return None
         resp = self._session.get(
             self._api_url(f"/issues/{info['number']}/timeline"),
             headers=_HEADERS,
@@ -291,19 +313,72 @@ class CommentsClient:
         resp.raise_for_status()
         eventos = resp.json()
         aplicacoes = [
-            e
-            for e in eventos
-            if e.get("event") == "labeled" and (e.get("label") or {}).get("name") in _DIAGNOSTIC_SET
+            e for e in eventos if e.get("event") == "labeled" and (e.get("label") or {}).get("name") in categoria
         ]
         if not aplicacoes:
             return None
         return aplicacoes[-1].get("created_at")
+
+    def get_diagnostico_timestamp(self, folio: str) -> str | None:
+        """Data em que a Engenharia definiu o diagnóstico dessa OS pela
+        última vez. Usado sob demanda, ao abrir o modal.
+        """
+        folio = str(folio)
+        info = self._find_issue(folio)
+        if info is None:
+            return None
+        return self._labeled_timestamp(info, _DIAGNOSTIC_SET)
+
+    def get_encerramento_engenharia_timestamp(self, folio: str) -> str | None:
+        """Data em que a Engenharia encerrou essa OS, seja por diagnóstico
+        ou por "Finalizado pela Engenharia" — o que tiver acontecido por
+        último. Usado sob demanda, ao abrir o modal.
+        """
+        folio = str(folio)
+        info = self._find_issue(folio)
+        if info is None:
+            return None
+        return self._labeled_timestamp(info, _LABELS_ENCERRAMENTO_ENGENHARIA)
+
+    def get_closed_by_engineering_dates(self, folios: list[str]) -> dict[str, str]:
+        """folio -> data em que a Engenharia encerrou aquela OS (diagnóstico
+        OU "Finalizado pela Engenharia", o que tiver acontecido por último) —
+        só para as OS informadas (espera-se que já estejam encerradas de
+        algum dos dois jeitos). Cacheado por mais tempo (ver __init__) porque
+        isso é 1 chamada de API por OS — usado no relatório de Fechamentos.
+        """
+        now = time.time()
+        with self._closed_dates_lock:
+            if (
+                self._closed_dates_cache is not None
+                and (now - self._closed_dates_cache_at) < self._closed_dates_cache_ttl
+            ):
+                return self._closed_dates_cache
+
+            self._refresh_issue_cache()
+            resultado: dict[str, str] = {}
+            for folio in folios:
+                folio = str(folio)
+                info = self._issue_cache.get(folio)
+                if info is None:
+                    continue
+                data = self._labeled_timestamp(info, _LABELS_ENCERRAMENTO_ENGENHARIA)
+                if data:
+                    resultado[folio] = data
+
+            self._closed_dates_cache = resultado
+            self._closed_dates_cache_at = now
+            return resultado
 
     def set_status_pos_os(self, folio: str, status: str | None) -> None:
         self._set_single_label(folio, status, _STATUS_POS_OS_SET)
 
     def set_acompanhamento(self, folio: str, ativo: bool) -> None:
         self._set_single_label(folio, ACOMPANHAMENTO_LABEL if ativo else None, _ACOMPANHAMENTO_SET)
+
+    def set_finalizado_engenharia(self, folio: str, ativo: bool) -> None:
+        self._set_single_label(folio, FINALIZADO_ENGENHARIA_LABEL if ativo else None, _FINALIZADO_ENGENHARIA_SET)
+        self._invalidar_cache_datas_fechamento()
 
     def toggle_tag(self, folio: str, tag: str) -> list[str]:
         """Ativa/desativa uma etiqueta local na OS. Retorna a lista atualizada."""

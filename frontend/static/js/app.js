@@ -48,6 +48,8 @@ const state = {
     dataInicio: "",
     dataFim: "",
   },
+  fechamentosVisao: "fracttal", // "fracttal" | "engenharia"
+  fechamentosEngenhariaDatas: null, // folio -> data (preenchido sob demanda)
 };
 
 // ---------------------------------------------------------------------
@@ -118,6 +120,42 @@ async function fetchJson(url, options) {
     throw new Error(body.detail || `Erro ${resp.status}`);
   }
   return resp.json();
+}
+
+// ---------------------------------------------------------------------
+// Tema claro/escuro (preferência guardada neste PC, via localStorage)
+// ---------------------------------------------------------------------
+const TEMA_STORAGE_KEY = "etm_tema";
+
+function aplicarTema(tema) {
+  if (tema === "light") {
+    document.documentElement.setAttribute("data-theme", "light");
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  const btn = document.getElementById("tema-toggle-btn");
+  if (btn) btn.textContent = tema === "light" ? "☀️" : "🌙";
+}
+
+function initTema() {
+  let tema = "dark";
+  try {
+    tema = localStorage.getItem(TEMA_STORAGE_KEY) || "dark";
+  } catch (e) {
+    /* localStorage indisponível — segue no tema escuro padrão */
+  }
+  aplicarTema(tema);
+
+  document.getElementById("tema-toggle-btn").addEventListener("click", () => {
+    const atual = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+    const novo = atual === "light" ? "dark" : "light";
+    try {
+      localStorage.setItem(TEMA_STORAGE_KEY, novo);
+    } catch (e) {
+      /* sem localStorage, a preferência só vale pra essa sessão */
+    }
+    aplicarTema(novo);
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -260,17 +298,50 @@ async function alternarAcompanhamento(os, btnEl) {
   }
 }
 
+// Finalizado pela Engenharia: junto com o diagnóstico, é o outro jeito de
+// uma OS sair das "Estações em Aberto" — sem precisar escolher um
+// diagnóstico específico (útil pro botão de encerrar em lote).
+function finalizadoEngenhariaBadgeHtml(os) {
+  return os.finalizado_engenharia
+    ? `<span class="badge badge-finalizado-engenharia">Finalizado pela Engenharia</span>`
+    : "";
+}
+
+function finalizadoEngenhariaBotaoHtml(os) {
+  return `<button type="button" class="finalizado-engenharia-btn ${os.finalizado_engenharia ? "ativo" : ""}" data-folio="${os.folio}" title="Marcar/desmarcar como finalizado pela Engenharia">${os.finalizado_engenharia ? "✔ Finalizado pela Engenharia" : "○ Finalizar pela Engenharia"}</button>`;
+}
+
+async function alternarFinalizadoEngenharia(os, btnEl) {
+  const novoValor = !os.finalizado_engenharia;
+  if (btnEl) btnEl.disabled = true;
+  try {
+    await fetchJson(`/api/os/${encodeURIComponent(os.folio)}/finalizado-engenharia`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ativo: novoValor }),
+    });
+    os.finalizado_engenharia = novoValor;
+    aplicarFiltrosERenderizar();
+    if (state.usinaAbertaAtual) renderUsinaAbertaBoard();
+    renderUsinasAbertasGrid();
+    if (state.modalFolioAtual === os.folio) abrirModal(os);
+  } catch (err) {
+    if (btnEl) btnEl.disabled = false;
+    alert(`Não foi possível salvar: ${err.message}`);
+  }
+}
+
 function renderCard(os, { comEtiquetas = false } = {}) {
   const div = document.createElement("div");
   div.className = "os-card";
   div.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${statusPosOsBadgeHtml(os)} ${acompanhamentoBadgeHtml(os)}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${statusPosOsBadgeHtml(os)} ${acompanhamentoBadgeHtml(os)} ${finalizadoEngenhariaBadgeHtml(os)}</div>
     <div class="titulo">${os.titulo || "(sem título)"}</div>
     <div class="meta">
       <span>${os.usina}</span>
       <span>${formatarData(os.data_criacao)}</span>
     </div>
-    <div class="diagnostico-row">${diagnosticoBotaoHtml(os)} ${statusPosOsBotaoHtml(os)} ${acompanhamentoBotaoHtml(os)}</div>
+    <div class="diagnostico-row">${diagnosticoBotaoHtml(os)} ${statusPosOsBotaoHtml(os)} ${acompanhamentoBotaoHtml(os)} ${finalizadoEngenhariaBotaoHtml(os)}</div>
     ${comEtiquetas ? renderTagsDoCard(os) : ""}
   `;
   div.addEventListener("click", (e) => {
@@ -292,6 +363,11 @@ function renderCard(os, { comEtiquetas = false } = {}) {
     if (e.target.closest(".acompanhamento-btn")) {
       e.stopPropagation();
       alternarAcompanhamento(os, e.target.closest(".acompanhamento-btn"));
+      return;
+    }
+    if (e.target.closest(".finalizado-engenharia-btn")) {
+      e.stopPropagation();
+      alternarFinalizadoEngenharia(os, e.target.closest(".finalizado-engenharia-btn"));
       return;
     }
     abrirModal(os);
@@ -772,7 +848,7 @@ function tempoEmAbertoTexto(dataMaisAntiga) {
 // um diagnóstico) — não quando o Fracttal marca a tarefa como finalizada
 // pelo responsável, já que isso não significa que a Engenharia já revisou.
 function osAbertaParaEngenharia(os) {
-  return os.status_bucket !== "cancelada" && !os.diagnostico;
+  return os.status_bucket !== "cancelada" && !os.diagnostico && !os.finalizado_engenharia;
 }
 
 function computeUsinasAbertas() {
@@ -1000,21 +1076,78 @@ function irParaHistoricoDaUsina(nomeUsina) {
   abrirHistoricoUsina(nomeUsina);
 }
 
+// Marca em lote, como "Finalizado pela Engenharia", todas as OS já
+// finalizadas no Fracttal (bucket "finalizada") da usina aberta no momento
+// que ainda não foram encerradas pela Engenharia (nem diagnóstico, nem
+// finalizado_engenharia) — sem precisar escolher um diagnóstico OS a OS.
+async function finalizarEngenhariaUsinaAtual() {
+  const nomeUsina = state.usinaAbertaAtual;
+  if (!nomeUsina || !state.plannerData) return;
+
+  const alvos = state.plannerData.finalizadas.filter(
+    (os) => os.usina === nomeUsina && !os.diagnostico && !os.finalizado_engenharia
+  );
+  if (alvos.length === 0) {
+    alert("Não há OS finalizadas no Fracttal pendentes de encerramento pela Engenharia nesta usina.");
+    return;
+  }
+
+  const confirmado = confirm(
+    `Marcar ${alvos.length} OS finalizada${alvos.length === 1 ? "" : "s"} desta usina como "Finalizado pela Engenharia"?`
+  );
+  if (!confirmado) return;
+
+  const btn = document.getElementById("eea-finalizar-engenharia-btn");
+  if (btn) btn.disabled = true;
+  const falhas = [];
+  for (const os of alvos) {
+    try {
+      await fetchJson(`/api/os/${encodeURIComponent(os.folio)}/finalizado-engenharia`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ativo: true }),
+      });
+      os.finalizado_engenharia = true;
+    } catch (err) {
+      falhas.push(os.folio);
+    }
+  }
+  if (btn) btn.disabled = false;
+
+  aplicarFiltrosERenderizar();
+  renderUsinaAbertaBoard();
+  renderUsinasAbertasGrid();
+
+  if (falhas.length > 0) {
+    alert(`Não foi possível marcar ${falhas.length} OS: ${falhas.join(", ")}. As demais foram marcadas normalmente.`);
+  }
+}
+
 // ---------------------------------------------------------------------
 // Fechamentos (quantas OS foram finalizadas por semana — indicador de
 // rendimento do time, agrupado pela data de fechamento no Fracttal)
 // ---------------------------------------------------------------------
-function passaFiltrosFechamentos(os) {
+function passaFiltrosFechamentosBase(os) {
   const f = state.fechamentosFiltros;
-  if (!os.data_final) return false;
   if (f.cliente && os.cliente !== f.cliente) return false;
   if (f.criadoPor && (os.criado_por || "").trim() !== f.criadoPor) return false;
   const tipoAtual = os.em_analise ? "analise" : "campo";
   if (!f.tiposTrabalho.has(tipoAtual)) return false;
-  const dataFinal = new Date(os.data_final);
-  if (f.dataInicio && dataFinal < new Date(`${f.dataInicio}T00:00:00`)) return false;
-  if (f.dataFim && dataFinal > new Date(`${f.dataFim}T23:59:59`)) return false;
   return true;
+}
+
+function passaFiltroPeriodoFechamentos(dataStr) {
+  const f = state.fechamentosFiltros;
+  const data = new Date(dataStr);
+  if (f.dataInicio && data < new Date(`${f.dataInicio}T00:00:00`)) return false;
+  if (f.dataFim && data > new Date(`${f.dataFim}T23:59:59`)) return false;
+  return true;
+}
+
+function passaFiltrosFechamentos(os) {
+  if (!os.data_final) return false;
+  if (!passaFiltrosFechamentosBase(os)) return false;
+  return passaFiltroPeriodoFechamentos(os.data_final);
 }
 
 // Segunda-feira da semana em que a data cai (padroniza o agrupamento).
@@ -1044,6 +1177,39 @@ function computeFechamentosPorSemana() {
   return Array.from(porSemana.values()).sort((a, b) => b.inicio - a.inicio);
 }
 
+// Igual computeFechamentosPorSemana, mas agrupado pela data em que a
+// Engenharia encerrou a OS (diagnóstico ou "Finalizado pela Engenharia"),
+// não pela data de fechamento no Fracttal — e considera OS de qualquer
+// status (uma OS ainda "em andamento" no Fracttal pode já ter sido
+// encerrada pela Engenharia via diagnóstico, ver [[osAbertaParaEngenharia]]).
+function computeFechamentosPorSemanaEngenharia() {
+  if (!state.plannerData || !state.fechamentosEngenhariaDatas) return [];
+  const mapa = state.fechamentosEngenhariaDatas;
+  const todas = [
+    ...state.plannerData.nao_iniciadas,
+    ...state.plannerData.em_andamento,
+    ...state.plannerData.finalizadas,
+    ...(state.plannerData.canceladas || []),
+  ];
+  const porSemana = new Map();
+  todas.forEach((os) => {
+    const dataStr = mapa[os.folio];
+    if (!dataStr) return;
+    if (!passaFiltrosFechamentosBase(os)) return;
+    if (!passaFiltroPeriodoFechamentos(dataStr)) return;
+    os._dataEncerramentoEngenharia = dataStr; // usado só pra ordenar o card
+    const inicio = inicioDaSemana(dataStr);
+    const chave = inicio.toISOString().slice(0, 10);
+    if (!porSemana.has(chave)) {
+      const fim = new Date(inicio);
+      fim.setDate(inicio.getDate() + 6);
+      porSemana.set(chave, { chave, inicio, fim, os: [] });
+    }
+    porSemana.get(chave).os.push(os);
+  });
+  return Array.from(porSemana.values()).sort((a, b) => b.inicio - a.inicio);
+}
+
 function renderSemanaFechamentoCard(semana) {
   const div = document.createElement("div");
   div.className = "fech-semana-card";
@@ -1058,7 +1224,7 @@ function renderSemanaFechamentoCard(semana) {
   const listaEl = div.querySelector(".fech-semana-lista");
   semana.os
     .slice()
-    .sort((a, b) => new Date(b.data_final) - new Date(a.data_final))
+    .sort((a, b) => new Date(b._dataEncerramentoEngenharia || b.data_final) - new Date(a._dataEncerramentoEngenharia || a.data_final))
     .forEach((os) => listaEl.appendChild(renderCard(os)));
 
   const toggleBtn = div.querySelector(".fech-semana-toggle");
@@ -1075,7 +1241,14 @@ function renderFechamentosLista() {
   const status = document.getElementById("fech-status");
   if (!container) return;
 
-  const semanas = computeFechamentosPorSemana();
+  if (state.fechamentosVisao === "engenharia" && !state.fechamentosEngenhariaDatas) {
+    container.innerHTML = `<div class="empty-msg">Carregando datas de encerramento pela Engenharia (pode levar alguns segundos)...</div>`;
+    status.textContent = "";
+    return;
+  }
+
+  const semanas =
+    state.fechamentosVisao === "engenharia" ? computeFechamentosPorSemanaEngenharia() : computeFechamentosPorSemana();
   container.innerHTML = "";
   if (semanas.length === 0) {
     container.innerHTML = `<div class="empty-msg">Nenhuma OS fechada encontrada pros filtros escolhidos</div>`;
@@ -1160,10 +1333,38 @@ function initFiltrosFechamentos() {
     inputDataInicio.value = "";
     inputDataFim.value = "";
     document
-      .querySelectorAll("#tab-fechamentos .filtro-chips-inline .tag-chip")
+      .querySelectorAll("#tab-fechamentos .filtro-chips-inline .tag-chip[data-tipo-fechamentos]")
       .forEach((c) => c.classList.add("selected"));
     renderFechamentosLista();
   });
+
+  document.querySelectorAll("#tab-fechamentos .fech-visao-toggle .tag-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const visao = chip.dataset.visaoFechamentos;
+      if (state.fechamentosVisao === visao) return;
+      state.fechamentosVisao = visao;
+      document
+        .querySelectorAll("#tab-fechamentos .fech-visao-toggle .tag-chip")
+        .forEach((c) => c.classList.remove("selected"));
+      chip.classList.add("selected");
+      if (visao === "engenharia" && !state.fechamentosEngenhariaDatas) {
+        carregarFechamentosEngenharia();
+      } else {
+        renderFechamentosLista();
+      }
+    });
+  });
+}
+
+async function carregarFechamentosEngenharia() {
+  renderFechamentosLista();
+  try {
+    state.fechamentosEngenhariaDatas = await fetchJson("/api/fechamentos-engenharia");
+  } catch (err) {
+    state.fechamentosEngenhariaDatas = {};
+    console.warn("Falha ao carregar datas de fechamento pela Engenharia:", err);
+  }
+  renderFechamentosLista();
 }
 
 // ---------------------------------------------------------------------
@@ -1263,7 +1464,7 @@ function renderHistoryItem(os) {
   const div = document.createElement("div");
   div.className = "history-item";
   div.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${statusPosOsBadgeHtml(os)} ${acompanhamentoBadgeHtml(os)}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${statusPosOsBadgeHtml(os)} ${acompanhamentoBadgeHtml(os)} ${finalizadoEngenhariaBadgeHtml(os)}</div>
     <div class="titulo">${os.titulo || "(sem título)"}</div>
     <div class="meta">${os.etm_codigo || ""} · criada em ${formatarData(os.data_criacao)}</div>
   `;
@@ -1317,7 +1518,7 @@ function abrirModal(os) {
   const modal = document.getElementById("os-modal");
   const content = document.getElementById("modal-content");
   content.innerHTML = `
-    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${diagnosticoBotaoHtml(os)} ${statusPosOsBadgeHtml(os)} ${statusPosOsBotaoHtml(os)} ${acompanhamentoBadgeHtml(os)} ${acompanhamentoBotaoHtml(os)}</div>
+    <div class="folio">OS ${os.folio ?? "—"} ${badgeHtml(os.status_bucket)} ${os.em_analise ? '<span class="badge badge-analise">Análise de Engenharia</span>' : ""} ${statusFracttalBadgeHtml(os)} ${diagnosticoBadgeHtml(os)} ${diagnosticoBotaoHtml(os)} ${statusPosOsBadgeHtml(os)} ${statusPosOsBotaoHtml(os)} ${acompanhamentoBadgeHtml(os)} ${acompanhamentoBotaoHtml(os)} ${finalizadoEngenhariaBadgeHtml(os)} ${finalizadoEngenhariaBotaoHtml(os)}</div>
     <h3>${os.titulo || "(sem título)"}</h3>
     <dl>
       <dt>Usina</dt><dd>${os.usina}</dd>
@@ -1330,7 +1531,7 @@ function abrirModal(os) {
       <dt>Criado por</dt><dd>${os.criado_por || "—"}</dd>
       <dt>Etiquetas do Fracttal</dt><dd>${(os.etiquetas_fracttal || []).join(", ") || "—"}</dd>
       ${
-        os.diagnostico
+        os.diagnostico || os.finalizado_engenharia
           ? `<dt>Encerrada pela Engenharia em</dt><dd id="modal-encerramento-engenharia">Carregando...</dd>`
           : ""
       }
@@ -1374,6 +1575,13 @@ function abrirModal(os) {
       alternarAcompanhamento(os, acompanhamentoBtn);
     });
   }
+  const finalizadoEngenhariaBtn = content.querySelector(".finalizado-engenharia-btn");
+  if (finalizadoEngenhariaBtn) {
+    finalizadoEngenhariaBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      alternarFinalizadoEngenharia(os, finalizadoEngenhariaBtn);
+    });
+  }
 
   state.modalFolioAtual = os.folio;
   document.getElementById("comentario-texto").value = "";
@@ -1384,7 +1592,7 @@ function abrirModal(os) {
 }
 
 async function carregarDataEncerramentoEngenharia(os) {
-  if (!os.diagnostico) return;
+  if (!os.diagnostico && !os.finalizado_engenharia) return;
   try {
     const resp = await fetchJson(`/api/os/${encodeURIComponent(os.folio)}/diagnostico/data`);
     if (state.modalFolioAtual !== os.folio) return;
@@ -1642,6 +1850,7 @@ function dispensarAtualizacao() {
 // Init
 // ---------------------------------------------------------------------
 function init() {
+  initTema();
   initTabs();
   initNomeUsuario();
   initColunasRetrateis();
@@ -1676,7 +1885,9 @@ function init() {
 
   document.getElementById("refresh-btn").addEventListener("click", async (e) => {
     e.target.disabled = true;
+    state.fechamentosEngenhariaDatas = null;
     await Promise.all([carregarPlanner(true), carregarUsinas(true)]);
+    if (state.fechamentosVisao === "engenharia") carregarFechamentosEngenharia();
     if (state.usinaAtual) {
       await abrirHistoricoUsina(state.usinaAtual);
     } else if (state.clienteAtual) {
@@ -1691,6 +1902,7 @@ function init() {
   document.getElementById("eea-ver-historico-btn").addEventListener("click", () => {
     if (state.usinaAbertaAtual) irParaHistoricoDaUsina(state.usinaAbertaAtual);
   });
+  document.getElementById("eea-finalizar-engenharia-btn").addEventListener("click", finalizarEngenhariaUsinaAtual);
   document.getElementById("filtro-usina-historico").addEventListener("input", (e) => {
     renderUsinasGrid(e.target.value);
   });

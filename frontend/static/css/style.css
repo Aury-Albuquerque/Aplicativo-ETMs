@@ -14,6 +14,24 @@
   font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
+/* Modo claro — alterna via [data-theme="light"] na tag <html> (ver
+   tema-toggle-btn no topo do app e initTema() em app.js). Mantém o lime da
+   marca, mas um pouco mais escuro pra continuar legível como texto sobre
+   fundo claro (o tom original é claro demais pra isso). */
+:root[data-theme="light"] {
+  --navy: #f4f5fa;
+  --navy-soft: #ffffff;
+  --navy-lighter: #eceef6;
+  --lime: #5c8a0c;
+  --lime-soft: #eef8d9;
+  --text: #181428;
+  --text-muted: #635d7c;
+  --border: #dcdae8;
+  --danger: #d6453f;
+  --warning: #a4680a;
+  --ok: #1f8f5c;
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -133,6 +151,22 @@ body {
 }
 
 .refresh-btn:hover { border-color: var(--lime); }
+
+.tema-toggle-btn {
+  background: var(--navy-lighter);
+  border: 1px solid var(--border);
+  color: var(--text);
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tema-toggle-btn:hover { border-color: var(--lime); }
 .refresh-btn:disabled { opacity: 0.5; cursor: wait; }
 
 /* ---------- Banner de atualização ---------- */
@@ -537,6 +571,26 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
   background: rgba(170,220,33,0.1);
 }
 
+.finalizado-engenharia-btn {
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.finalizado-engenharia-btn:hover { border-color: #6fb2ff; color: #6fb2ff; }
+
+.finalizado-engenharia-btn.ativo {
+  border-style: solid;
+  border-color: #6fb2ff;
+  color: #6fb2ff;
+  background: rgba(111,178,255,0.1);
+}
+
 .diagnostico-limpar-btn {
   background: none;
   border: none;
@@ -703,6 +757,7 @@ main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
 .badge-diagnostico { background: rgba(255,157,108,0.18); color: #ff9d6c; }
 .badge-status-pos-os { background: rgba(92,214,192,0.18); color: #5cd6c0; }
 .badge-acompanhamento { background: rgba(170,220,33,0.18); color: var(--lime); }
+.badge-finalizado-engenharia { background: rgba(111,178,255,0.18); color: #6fb2ff; }
 
 /* Status "cru" da tarefa no Fracttal (Não iniciada/Em progresso/Pausada/Finalizada) */
 .badge-fracttal { border: 1px solid transparent; }

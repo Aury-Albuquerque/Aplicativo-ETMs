@@ -174,16 +174,18 @@ def _build_id_to_folio(raw_orders: list[dict[str, Any]]) -> dict[int, str]:
     }
 
 
-def _safe_label_mappings() -> tuple[dict[str, str], dict[str, str], dict[str, list[str]], dict[str, bool]]:
-    # Diagnóstico, status pós-OS, etiquetas e acompanhamento são "extras"
-    # guardados no GitHub — se estiver fora do ar por algum motivo, isso não
-    # pode derrubar o Planner/Histórico inteiro (o app continua funcionando,
-    # só sem eles).
+def _safe_label_mappings() -> tuple[
+    dict[str, str], dict[str, str], dict[str, list[str]], dict[str, bool], dict[str, bool]
+]:
+    # Diagnóstico, status pós-OS, etiquetas, acompanhamento e finalizado
+    # pela Engenharia são "extras" guardados no GitHub — se estiver fora do
+    # ar por algum motivo, isso não pode derrubar o Planner/Histórico
+    # inteiro (o app continua funcionando, só sem eles).
     try:
         return comments_client.get_all_label_mappings()
     except Exception as exc:  # noqa: BLE001
         print(f"[main] Falha ao buscar diagnósticos/status/etiquetas/acompanhamento: {exc}")
-        return {}, {}, {}, {}
+        return {}, {}, {}, {}, {}
 
 
 # ----------------------------------------------------------------------
@@ -197,7 +199,7 @@ def get_planner(refresh: bool = False) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"Erro ao consultar Fracttal: {exc}") from exc
 
     id_to_folio = _build_id_to_folio(raw_orders)
-    diagnosticos, status_pos_os, tags, acompanhamento = _safe_label_mappings()
+    diagnosticos, status_pos_os, tags, acompanhamento, finalizado_engenharia = _safe_label_mappings()
     columns: dict[str, list[dict[str, Any]]] = {
         "nao_iniciada": [],
         "em_andamento": [],
@@ -210,6 +212,7 @@ def get_planner(refresh: bool = False) -> dict[str, Any]:
         os_norm["status_pos_os"] = status_pos_os.get(str(os_norm["folio"]))
         os_norm["etiquetas"] = tags.get(str(os_norm["folio"]), [])
         os_norm["em_acompanhamento"] = acompanhamento.get(str(os_norm["folio"]), False)
+        os_norm["finalizado_engenharia"] = finalizado_engenharia.get(str(os_norm["folio"]), False)
         # OS cancelada não é trabalho ativo nem pendente — fica escondida por
         # padrão no Planner, mas o front pode optar por mostrá-la (filtro).
         columns[os_norm["status_bucket"]].append(os_norm)
@@ -243,7 +246,7 @@ def get_historico_usina(usina: str, refresh: bool = False) -> list[dict[str, Any
         raise HTTPException(status_code=502, detail=f"Erro ao consultar Fracttal: {exc}") from exc
 
     id_to_folio = _build_id_to_folio(raw_orders)
-    diagnosticos, status_pos_os, tags, acompanhamento = _safe_label_mappings()
+    diagnosticos, status_pos_os, tags, acompanhamento, finalizado_engenharia = _safe_label_mappings()
     historico = []
     for raw in raw_orders:
         if (raw.get("groups_1_description") or "Usina não identificada") != usina:
@@ -253,6 +256,7 @@ def get_historico_usina(usina: str, refresh: bool = False) -> list[dict[str, Any
         os_norm["status_pos_os"] = status_pos_os.get(str(os_norm["folio"]))
         os_norm["etiquetas"] = tags.get(str(os_norm["folio"]), [])
         os_norm["em_acompanhamento"] = acompanhamento.get(str(os_norm["folio"]), False)
+        os_norm["finalizado_engenharia"] = finalizado_engenharia.get(str(os_norm["folio"]), False)
         historico.append(os_norm)
     historico.sort(key=lambda o: o.get("data_criacao") or "", reverse=True)
     return historico
@@ -352,11 +356,11 @@ def definir_diagnostico(folio: str, corpo: DiagnosticoIn) -> dict[str, Any]:
 
 @app.get("/api/os/{folio}/diagnostico/data")
 def get_data_diagnostico(folio: str) -> dict[str, Any]:
-    """Quando a Engenharia definiu o diagnóstico dessa OS (data de
-    encerramento pela Engenharia) — puxado sob demanda, ao abrir o modal.
+    """Quando a Engenharia encerrou essa OS (por diagnóstico ou por
+    "Finalizado pela Engenharia") — puxado sob demanda, ao abrir o modal.
     """
     try:
-        data = comments_client.get_diagnostico_timestamp(folio)
+        data = comments_client.get_encerramento_engenharia_timestamp(folio)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Erro ao consultar GitHub: {exc}") from exc
     return {"folio": folio, "data_encerramento_engenharia": data}
@@ -423,6 +427,44 @@ def definir_acompanhamento(folio: str, corpo: AcompanhamentoIn) -> dict[str, Any
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Erro ao salvar acompanhamento: {exc}") from exc
     return {"folio": folio, "em_acompanhamento": corpo.ativo}
+
+
+# ----------------------------------------------------------------------
+# Finalizado pela Engenharia (marcador único por OS — junto com o
+# diagnóstico, é o que faz a OS sair das "Estações em Aberto"; existe pra
+# encerrar sem precisar escolher um diagnóstico específico, ex: encerrar em
+# lote OS antigas já finalizadas no Fracttal)
+# ----------------------------------------------------------------------
+class FinalizadoEngenhariaIn(BaseModel):
+    ativo: bool
+
+
+@app.post("/api/os/{folio}/finalizado-engenharia")
+def definir_finalizado_engenharia(folio: str, corpo: FinalizadoEngenhariaIn) -> dict[str, Any]:
+    try:
+        comments_client.set_finalizado_engenharia(folio, corpo.ativo)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Erro ao salvar: {exc}") from exc
+    return {"folio": folio, "finalizado_engenharia": corpo.ativo}
+
+
+@app.get("/api/fechamentos-engenharia")
+def get_fechamentos_engenharia(refresh: bool = False) -> dict[str, str]:
+    """folio -> data em que a Engenharia encerrou aquela OS (diagnóstico ou
+    "Finalizado pela Engenharia"), só para as já encerradas de algum dos
+    dois jeitos. Usado na aba Fechamentos, na visão "pela Engenharia".
+    """
+    try:
+        raw_orders = fracttal_client.get_relevant_work_orders(force_refresh=refresh)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Erro ao consultar Fracttal: {exc}") from exc
+    diagnosticos, _status_pos_os, _tags, _acompanhamento, finalizado_engenharia = _safe_label_mappings()
+    folios = {str(raw["wo_folio"]) for raw in raw_orders if raw.get("wo_folio")}
+    encerrados = [f for f in folios if diagnosticos.get(f) or finalizado_engenharia.get(f)]
+    try:
+        return comments_client.get_closed_by_engineering_dates(encerrados)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Erro ao consultar GitHub: {exc}") from exc
 
 
 # ----------------------------------------------------------------------
