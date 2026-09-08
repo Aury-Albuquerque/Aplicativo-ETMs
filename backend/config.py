@@ -37,6 +37,11 @@ CORRECTIVE_TASK_TYPE = "Corretiva"
 # pra dar visibilidade dessa fila de análise no Planner.
 ANALISTAS_ETM = {"joão vieira", "aury albuquerque"}
 
+# OS cujo SOLICITANTE (requested_by) é uma dessas pessoas conta como "Campo"
+# mesmo que o técnico responsável seja um analista de ETM — nesses casos a
+# solicitação já nasce como uma ida a campo, não uma análise de engenharia.
+SOLICITANTES_CAMPO_FORCADO = {"joão vieira"}
+
 # ----------------------------------------------------------------------
 # Atualização automática (releases do GitHub)
 # ----------------------------------------------------------------------

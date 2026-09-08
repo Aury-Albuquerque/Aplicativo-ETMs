@@ -118,7 +118,12 @@ def _normalize_os(raw: dict[str, Any], id_to_folio: dict[int, str] | None = None
     tecnico = (raw.get("personnel_description") or "").strip()
     eh_corretiva = tipo_os.lower() == config.CORRECTIVE_TASK_TYPE.lower()
     # "Em análise": ainda não é uma OS corretiva (não foi a campo), mas está
-    # atribuída a um dos analistas de ETM — ver config.ANALISTAS_ETM.
+    # atribuída a um dos analistas de ETM — ver config.ANALISTAS_ETM. O
+    # técnico manda aqui: se ele é analista, é análise mesmo que o
+    # solicitante seja alguém de SOLICITANTES_CAMPO_FORCADO (comum: o
+    # próprio analista abre a OS pra ele mesmo analisar). Esse campo só
+    # entra em jogo pra OS que não seriam pegas por nenhuma das duas regras
+    # acima — ver _is_solicitado_para_campo em fracttal_client.py.
     em_analise = not eh_corretiva and tecnico.lower() in config.ANALISTAS_ETM
     return {
         "folio": raw.get("wo_folio"),

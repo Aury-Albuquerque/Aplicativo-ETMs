@@ -211,8 +211,11 @@ class FracttalClient:
         return self._get_all_pages("/work_orders_subtasks", {"folio": wo_folio})
 
     def get_relevant_work_orders(self, force_refresh: bool = False) -> list[dict[str, Any]]:
-        """OS de ETM relevantes pro app: as Corretivas (indo a campo) E as que
-        ainda estão em análise, atribuídas a um dos ANALISTAS_ETM (ver config).
+        """OS de ETM relevantes pro app: as Corretivas (indo a campo), as que
+        ainda estão em análise (atribuídas a um dos ANALISTAS_ETM, ver
+        config) e as solicitadas por alguém de SOLICITANTES_CAMPO_FORCADO
+        (essas contam como Campo, mesmo sem ser Corretiva nem atribuídas a
+        um analista).
         """
         with self._orders_lock:
             now = time.time()
@@ -224,7 +227,9 @@ class FracttalClient:
                 return self._orders_cache
 
             orders = self.get_all_etm_work_orders(force_refresh=force_refresh)
-            relevantes = [o for o in orders if _is_corretiva(o) or _is_em_analise(o)]
+            relevantes = [
+                o for o in orders if _is_corretiva(o) or _is_em_analise(o) or _is_solicitado_para_campo(o)
+            ]
             self._orders_cache = relevantes
             self._orders_cache_at = now
             return relevantes
@@ -237,6 +242,11 @@ def _is_corretiva(raw: dict[str, Any]) -> bool:
 def _is_em_analise(raw: dict[str, Any]) -> bool:
     responsavel = (raw.get("personnel_description") or "").strip().lower()
     return responsavel in config.ANALISTAS_ETM
+
+
+def _is_solicitado_para_campo(raw: dict[str, Any]) -> bool:
+    solicitante = (raw.get("requested_by") or "").strip().lower()
+    return solicitante in config.SOLICITANTES_CAMPO_FORCADO
 
 
 fracttal_client = FracttalClient()
