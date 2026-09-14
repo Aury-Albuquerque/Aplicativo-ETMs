@@ -18,6 +18,7 @@ const state = {
     cliente: "",
     usina: "",
     criadoPor: "",
+    solicitante: "",
     responsavel: "",
     tiposTrabalho: new Set(["analise", "campo"]),
     dataInicio: "",
@@ -36,6 +37,7 @@ const state = {
   abertasFiltros: {
     cliente: "",
     criadoPor: "",
+    solicitante: "",
     tiposTrabalho: new Set(["analise", "campo"]),
     dataInicio: "",
     dataFim: "",
@@ -44,6 +46,7 @@ const state = {
   fechamentosFiltros: {
     cliente: "",
     criadoPor: "",
+    solicitante: "",
     tiposTrabalho: new Set(["analise", "campo"]),
     dataInicio: "",
     dataFim: "",
@@ -596,6 +599,7 @@ function passaFiltrosGerais(os) {
   if (f.cliente && os.cliente !== f.cliente) return false;
   if (f.usina && !os.usina.toLowerCase().includes(f.usina.toLowerCase())) return false;
   if (f.criadoPor && (os.criado_por || "").trim() !== f.criadoPor) return false;
+  if (f.solicitante && (os.solicitante || "").trim() !== f.solicitante) return false;
   if (f.responsavel && (os.tecnico || "").trim() !== f.responsavel) return false;
   const tipoAtual = os.em_analise ? "analise" : "campo";
   if (!f.tiposTrabalho.has(tipoAtual)) return false;
@@ -698,6 +702,21 @@ function initFiltros() {
   });
 
   initCombobox({
+    wrapperId: "filtro-solicitante-wrapper",
+    inputId: "filtro-solicitante-input",
+    dropdownId: "filtro-solicitante-dropdown",
+    getOpcoes: () => state.solicitantesDisponiveis || [],
+    onSelect: (nome) => {
+      state.filtros.solicitante = nome;
+      aplicarFiltrosERenderizar();
+    },
+    onClear: () => {
+      state.filtros.solicitante = "";
+      aplicarFiltrosERenderizar();
+    },
+  });
+
+  initCombobox({
     wrapperId: "filtro-responsavel-wrapper",
     inputId: "filtro-responsavel-input",
     dropdownId: "filtro-responsavel-dropdown",
@@ -749,6 +768,7 @@ function initFiltros() {
       cliente: "",
       usina: "",
       criadoPor: "",
+      solicitante: "",
       responsavel: "",
       tiposTrabalho: new Set(["analise", "campo"]),
       dataInicio: "",
@@ -758,6 +778,7 @@ function initFiltros() {
     selectCliente.value = "";
     inputUsina.value = "";
     document.getElementById("filtro-criador-input").value = "";
+    document.getElementById("filtro-solicitante-input").value = "";
     document.getElementById("filtro-responsavel-input").value = "";
     inputDataInicio.value = "";
     inputDataFim.value = "";
@@ -803,6 +824,7 @@ async function carregarPlanner(refresh = false) {
     popularFiltroCliente(todasAsOs);
     state.criadoresDisponiveis = extrairNomesUnicos(osAtivas, "criado_por");
     state.responsaveisDisponiveis = extrairNomesUnicos(osAtivas, "tecnico");
+    state.solicitantesDisponiveis = extrairNomesUnicos(osAtivas, "solicitante");
 
     aplicarFiltrosERenderizar();
     statusEl.textContent = `${data.total} OS corretivas de ETM · atualizado agora`;
@@ -827,6 +849,7 @@ function passaFiltrosAbertas(os) {
   const f = state.abertasFiltros;
   if (f.cliente && os.cliente !== f.cliente) return false;
   if (f.criadoPor && (os.criado_por || "").trim() !== f.criadoPor) return false;
+  if (f.solicitante && (os.solicitante || "").trim() !== f.solicitante) return false;
   const tipoAtual = os.em_analise ? "analise" : "campo";
   if (!f.tiposTrabalho.has(tipoAtual)) return false;
   if (!osAtivaNoPeriodo(os, f.dataInicio, f.dataFim)) return false;
@@ -993,6 +1016,21 @@ function initFiltrosAbertas() {
     },
   });
 
+  initCombobox({
+    wrapperId: "eea-filtro-solicitante-wrapper",
+    inputId: "eea-filtro-solicitante-input",
+    dropdownId: "eea-filtro-solicitante-dropdown",
+    getOpcoes: () => state.solicitantesDisponiveis || [],
+    onSelect: (nome) => {
+      state.abertasFiltros.solicitante = nome;
+      renderUsinasAbertasGrid();
+    },
+    onClear: () => {
+      state.abertasFiltros.solicitante = "";
+      renderUsinasAbertasGrid();
+    },
+  });
+
   document.querySelectorAll('#tab-abertas .filtro-chips-inline .tag-chip[data-tipo-abertas]').forEach((chip) => {
     chip.addEventListener("click", () => {
       const tipo = chip.dataset.tipoAbertas;
@@ -1024,12 +1062,14 @@ function initFiltrosAbertas() {
     state.abertasFiltros = {
       cliente: "",
       criadoPor: "",
+      solicitante: "",
       tiposTrabalho: new Set(["analise", "campo"]),
       dataInicio: "",
       dataFim: "",
     };
     selectCliente.value = "";
     document.getElementById("eea-filtro-criador-input").value = "";
+    document.getElementById("eea-filtro-solicitante-input").value = "";
     inputDataInicio.value = "";
     inputDataFim.value = "";
     document
@@ -1131,6 +1171,7 @@ function passaFiltrosFechamentosBase(os) {
   const f = state.fechamentosFiltros;
   if (f.cliente && os.cliente !== f.cliente) return false;
   if (f.criadoPor && (os.criado_por || "").trim() !== f.criadoPor) return false;
+  if (f.solicitante && (os.solicitante || "").trim() !== f.solicitante) return false;
   const tipoAtual = os.em_analise ? "analise" : "campo";
   if (!f.tiposTrabalho.has(tipoAtual)) return false;
   return true;
@@ -1295,6 +1336,21 @@ function initFiltrosFechamentos() {
     },
   });
 
+  initCombobox({
+    wrapperId: "fech-filtro-solicitante-wrapper",
+    inputId: "fech-filtro-solicitante-input",
+    dropdownId: "fech-filtro-solicitante-dropdown",
+    getOpcoes: () => state.solicitantesDisponiveis || [],
+    onSelect: (nome) => {
+      state.fechamentosFiltros.solicitante = nome;
+      renderFechamentosLista();
+    },
+    onClear: () => {
+      state.fechamentosFiltros.solicitante = "";
+      renderFechamentosLista();
+    },
+  });
+
   document.querySelectorAll('#tab-fechamentos .filtro-chips-inline .tag-chip[data-tipo-fechamentos]').forEach((chip) => {
     chip.addEventListener("click", () => {
       const tipo = chip.dataset.tipoFechamentos;
@@ -1324,12 +1380,14 @@ function initFiltrosFechamentos() {
     state.fechamentosFiltros = {
       cliente: "",
       criadoPor: "",
+      solicitante: "",
       tiposTrabalho: new Set(["analise", "campo"]),
       dataInicio: "",
       dataFim: "",
     };
     selectCliente.value = "";
     document.getElementById("fech-filtro-criador-input").value = "";
+    document.getElementById("fech-filtro-solicitante-input").value = "";
     inputDataInicio.value = "";
     inputDataFim.value = "";
     document
