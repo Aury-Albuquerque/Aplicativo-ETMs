@@ -55,13 +55,23 @@ GITHUB_UPDATE_TOKEN = os.getenv("GITHUB_UPDATE_TOKEN") or _DEFAULT_GITHUB_TOKEN
 GITHUB_API_BASE = "https://api.github.com"
 
 # ----------------------------------------------------------------------
+# Publicação de releases (uso local, só na máquina de build)
+# ----------------------------------------------------------------------
+# Token com permissão "Contents: Read and write" nesse repo — precisa disso
+# pra criar a Release e subir o instalador como asset. Diferente dos dois
+# acima, ESTE NUNCA tem fallback hardcoded aqui: só existe se vier do .env
+# local. Ele não pode ir embutido no .exe (senão qualquer pessoa que
+# instalou o app conseguiria extrair um token capaz de escrever no repo).
+GITHUB_RELEASE_TOKEN = os.getenv("GITHUB_RELEASE_TOKEN")
+
+# ----------------------------------------------------------------------
 # Comentários compartilhados por OS (guardados como Issues do mesmo repo)
 # ----------------------------------------------------------------------
 # Token separado, com permissão SÓ de "Issues: Read and write" (sem acesso
 # ao código) — mesmo que alguém extraia esse valor do .exe, o máximo que
 # consegue é ler/criar comentários, nunca alterar o código do app.
 _DEFAULT_GITHUB_COMMENTS_TOKEN = (
-    "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"
+    "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"
 )
 GITHUB_COMMENTS_TOKEN = os.getenv("GITHUB_COMMENTS_TOKEN") or _DEFAULT_GITHUB_COMMENTS_TOKEN
 
