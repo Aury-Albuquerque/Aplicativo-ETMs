@@ -211,10 +211,12 @@ class FracttalClient:
         return self._get_all_pages("/work_orders_subtasks", {"folio": wo_folio})
 
     def get_relevant_work_orders(self, force_refresh: bool = False) -> list[dict[str, Any]]:
-        """OS de ETM relevantes pro app: as Corretivas (indo a campo), as que
-        ainda estão em análise (atribuídas a um dos ANALISTAS_ETM, ver
-        config) e as solicitadas por alguém de SOLICITANTES_CAMPO_FORCADO
-        (essas contam como Campo, mesmo sem ser Corretiva nem atribuídas a
+        """OS de ETM relevantes pro app: as Corretivas (indo a campo), as
+        Administrativas (também trabalho de ETM de verdade — coleta/análise
+        de dados, garantia etc. — só não passam pelo campo), as que ainda
+        estão em análise (atribuídas a um dos ANALISTAS_ETM, ver config) e as
+        solicitadas por alguém de SOLICITANTES_CAMPO_FORCADO (essas contam
+        como Campo, mesmo sem ser Corretiva/Administrativa nem atribuídas a
         um analista).
         """
         with self._orders_lock:
@@ -228,7 +230,9 @@ class FracttalClient:
 
             orders = self.get_all_etm_work_orders(force_refresh=force_refresh)
             relevantes = [
-                o for o in orders if _is_corretiva(o) or _is_em_analise(o) or _is_solicitado_para_campo(o)
+                o
+                for o in orders
+                if _is_corretiva(o) or _is_administrativa(o) or _is_em_analise(o) or _is_solicitado_para_campo(o)
             ]
             self._orders_cache = relevantes
             self._orders_cache_at = now
@@ -237,6 +241,10 @@ class FracttalClient:
 
 def _is_corretiva(raw: dict[str, Any]) -> bool:
     return (raw.get("tasks_log_task_type_main") or "").strip().lower() == config.CORRECTIVE_TASK_TYPE.lower()
+
+
+def _is_administrativa(raw: dict[str, Any]) -> bool:
+    return (raw.get("tasks_log_task_type_main") or "").strip().lower() == config.ADMINISTRATIVE_TASK_TYPE.lower()
 
 
 def _is_em_analise(raw: dict[str, Any]) -> bool:

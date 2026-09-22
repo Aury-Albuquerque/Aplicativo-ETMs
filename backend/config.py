@@ -31,6 +31,11 @@ ETM_DESCRIPTION_MARKERS = ["estação meteorológica", "estacao meteorologica"]
 # Valor exato do campo tasks_log_task_type_main que identifica OS corretivas
 CORRECTIVE_TASK_TYPE = "Corretiva"
 
+# OS de ETM também aparecem tipadas como "Administrativa" no Fracttal (ex:
+# coleta/análise de dados, abertura de chamado de garantia) — são trabalho
+# de ETM de verdade, só não passam pelo campo. Trazemos elas também.
+ADMINISTRATIVE_TASK_TYPE = "Administrativa"
+
 # Antes de uma OS de ETM virar corretiva (ida a campo), ela passa por uma
 # etapa de análise, feita por essas pessoas. Trazemos também as OS de ETM
 # atribuídas a elas, mesmo que ainda não estejam marcadas como "Corretiva",
