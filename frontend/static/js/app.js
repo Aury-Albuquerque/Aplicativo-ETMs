@@ -1893,8 +1893,8 @@ async function aplicarAtualizacao() {
     // mensagem prometesse "esta janela vai fechar", ela ia ficar parada
     // aqui pra sempre parecendo travada, mesmo com a atualização já
     // concluída — por isso avisamos pra fechar manualmente.
-    btn.textContent = "Atualização concluída";
-    texto.textContent = "Atualização concluída em segundo plano! Esta aba não fecha sozinha — feche-a manualmente e abra o app de novo pelo atalho pra usar a nova versão.";
+    btn.textContent = "Atualização instalada";
+    texto.textContent = "Atualização instalada! Abra o app novamente (pelo atalho) pra usar a nova versão — pode fechar esta aba.";
   } catch (err) {
     btn.disabled = false;
     btn.textContent = "Atualizar agora";
