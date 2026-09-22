@@ -1887,9 +1887,14 @@ async function aplicarAtualizacao() {
   btn.textContent = "Atualizando...";
   try {
     await fetchJson("/api/update/apply", { method: "POST" });
-    // A partir daqui o app atual vai fechar sozinho. Mostramos aviso mas o
-    // servidor local também vai parar de responder.
-    texto.textContent = "Instalando a atualização — esta janela vai fechar em instantes. Abra o app novamente pra usar a nova versão.";
+    // A partir daqui o app atual (o servidor local) já fechou sozinho nos
+    // bastidores — mas isso NÃO fecha esta aba do navegador (nenhum site
+    // consegue fechar uma aba sozinho, por segurança do navegador). Se a
+    // mensagem prometesse "esta janela vai fechar", ela ia ficar parada
+    // aqui pra sempre parecendo travada, mesmo com a atualização já
+    // concluída — por isso avisamos pra fechar manualmente.
+    btn.textContent = "Atualização concluída";
+    texto.textContent = "Atualização concluída em segundo plano! Esta aba não fecha sozinha — feche-a manualmente e abra o app de novo pelo atalho pra usar a nova versão.";
   } catch (err) {
     btn.disabled = false;
     btn.textContent = "Atualizar agora";
